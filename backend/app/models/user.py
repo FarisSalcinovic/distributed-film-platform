@@ -1,38 +1,28 @@
-# backend/app/models/user.py
-from sqlalchemy import Column, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, DateTime, Boolean
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
-from ..db import Base
+from backend.app.db import Base
+
 import uuid
 
 
-# Ova linija osigurava da je model UUID tipa stringa za kompatibilnost s PostgreSQL-om
-# i lakšim rukovanjem u API-ju.
-
 class User(Base):
-    """
-    SQLAlchemy Model za korisnike (PostgreSQL).
-    Sadrži polja potrebna za JWT autentifikaciju i RBAC (Role-Based Access Control).
-    """
     __tablename__ = "users"
 
-    # Koristimo UUID kao primarni ključ
-    user_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
-
-    username = Column(String, unique=True, index=True, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-
-    # Hash lozinke
-    hashed_password = Column(String, nullable=False)
-
-    # Role-Based Access Control (RBAC) - Modul B1
-    role = Column(String, default="user", nullable=False)  # 'user' ili 'admin'
-
-    # Status i praćenje (Soft Delete)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    username = Column(String(50), unique=True, nullable=False, index=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    full_name = Column(String(100))
+    role = Column(String(20), default="user", nullable=False)
     is_active = Column(Boolean, default=True)
-    is_deleted = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    created_at = Column(DateTime(timezone=True), default=func.now())
-    updated_at = Column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+    # For ETL job tracking
+    collections_count = Column(Integer, default=0)
+    total_data_points = Column(Integer, default=0)
 
     def __repr__(self):
-        return f"<User username={self.username} role={self.role}>"
+        return f"<User {self.username} ({self.role})>"

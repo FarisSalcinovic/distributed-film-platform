@@ -70,7 +70,6 @@ services:
     restart: always
 
   # 5. Celery Worker Service
-  # 5. Celery Worker Service
   worker:
     build:
       context: ./backend
