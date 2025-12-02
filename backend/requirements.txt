@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+pydantic
+python-jose[cryptography] # Za JWT
+passlib[bcrypt] # Za hashanje lozinki
+python-dotenv # Za učitavanje .env varijabli
+pydantic-settings # Potrebno za BaseSettings u Pydantic v2
+motor # Asinkroni driver za MongoDB
+psycopg2-binary # Driver za PostgreSQL
+celery # Za asinhrone poslove
+requests # Za pozive vanjskih API-ja
+asyncpg # Dodajemo asinkroni driver za PostgreSQL
+sqlalchemy
+redis
