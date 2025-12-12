@@ -1,9 +1,8 @@
 # backend/app/tasks.py
 from celery import Celery
-import os
+from .config import settings
 
-# Koristimo CELERY_BROKER_URL iz environment varijable
-celery_app = Celery('app', broker=os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0'))
+celery_app = Celery('app', broker=settings.CELERY_BROKER_URL)
 
 # Opcionalno: konfiguracija Celery
 celery_app.conf.update(

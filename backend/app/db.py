@@ -1,84 +1,73 @@
-# backend/app/db.py
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine
 from motor.motor_asyncio import AsyncIOMotorClient
 from .config import settings
 import asyncio
 
-# --- PostgreSQL Konekcija (Za Korisnike/Logove) ---
+# --- PostgreSQL Konekcija ---
 
-async def create_all_tables(max_tries: int = 10, delay: float = 3):
-    """Creates all tables defined by SQLAlchemy models with a retry mechanism."""
-    for attempt in range(max_tries):
-        try:
-            async with engine.begin() as conn:
-                print(f"Attempt {attempt + 1}: Creating/checking PostgreSQL tables...")
-                # Potrebno je osigurati da su svi modeli (npr. User) importani!
-                await conn.run_sync(Base.metadata.create_all)
-                print("PostgreSQL tables successfully created/checked.")
-                return # Uspjeh, izlazak iz funkcije
-        except Exception as e:
-            print(f"PostgreSQL connection failed on attempt {attempt + 1}: {e}")
-            if attempt < max_tries - 1:
-                print(f"Retrying in {delay} seconds...")
-                await asyncio.sleep(delay)
-            else:
-                # Nismo uspjeli nakon svih pokušaja, bacamo grešku.
-                raise ConnectionError("Failed to connect to PostgreSQL after multiple retries.") from e
+# 1. Asinkroni engine za FastAPI
+async_engine = create_async_engine(settings.POSTGRES_URL, echo=True, future=True)
 
-# 1. Kreiranje Asinkronog Engine-a
-engine = create_async_engine(settings.POSTGRES_URL, echo=False) # echo=True za debug
+# 2. Sync engine samo za kreiranje tabela
+sync_engine = create_engine(settings.POSTGRES_URL_SYNC)
 
-# 2. Asinkrona Sesija (Ključno za FastAPI)
+# 3. Asinkrona Sesija
 AsyncSessionLocal = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
+    async_engine, class_=AsyncSession, expire_on_commit=False
 )
 
-# 3. Bazni Model za Tablice
+# 4. Sync Sesija za kreiranje tabela (samo startup)
+SyncSessionLocal = sessionmaker(
+    sync_engine, expire_on_commit=False
+)
+
+# 5. Bazni Model
 Base = declarative_base()
 
-# Funkcija za dobivanje sesije (Dependency Injection)
+# 6. Async DB Dependency
 async def get_db():
-    """Yields a database session that closes automatically."""
+    """Yields an async database session."""
     async with AsyncSessionLocal() as session:
-        yield session
+        try:
+            yield session
+        finally:
+            await session.close()
 
-# Funkcija za kreiranje svih tablica (poziva se pri pokretanju aplikacije)
+# 7. Funkcija za kreiranje tabela
+def create_all_tables_sync():
+    """Creates all tables using sync engine."""
+    Base.metadata.create_all(bind=sync_engine)
+    print("✓ PostgreSQL tables created successfully")
+
 async def create_all_tables():
-    """Creates all tables defined by SQLAlchemy models in the database."""
-    async with engine.begin() as conn:
-        # Potrebno je osigurati da su svi modeli (npr. User) importani prije ovog poziva!
-        await conn.run_sync(Base.metadata.create_all)
+    """Async wrapper for table creation."""
+    # Koristimo run_in_executor za sync operaciju
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, create_all_tables_sync)
 
-
-# --- MongoDB Konekcija (Za Filmske Podatke) ---
-
+# --- MongoDB Konekcija ---
 mongodb_client: AsyncIOMotorClient = None
 
 def get_mongo_client() -> AsyncIOMotorClient:
     """Returns the global MongoDB client instance."""
     return mongodb_client
 
-
-# backend/app/db.py (dio za MongoDB konekciju)
 async def connect_to_mongo():
     """Establishes the connection to MongoDB upon application startup."""
     global mongodb_client
     print(f"Connecting to MongoDB at {settings.MONGO_URL}...")
     try:
-        # Postavljanje klijenta - koristimo MONGO_URL property
         mongodb_client = AsyncIOMotorClient(
             settings.MONGO_URL,
             serverSelectionTimeoutMS=5000
         )
-
-        # Provjera konekcije
         await mongodb_client.admin.command('ping')
-        print("MongoDB connection successful!")
-
+        print("✓ MongoDB connection successful!")
     except Exception as e:
-        print(f"Could not connect to MongoDB: {e}")
-        # U produkcijskom okruženju ovdje bi trebala biti fatalna greška
+        print(f"✗ Could not connect to MongoDB: {e}")
+        raise
 
 async def close_mongo_connection():
     """Closes the MongoDB connection upon application shutdown."""
