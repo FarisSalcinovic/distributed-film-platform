@@ -10,6 +10,7 @@ import Footer from "./components/Footer";
 import Profile from "./pages/Profile"; // nove stranice
 import EditProfile from "./pages/EditProfile";
 import CityPage from "./pages/CityPage";
+import AnalyticsDashboard from "./pages/AnalyticsDashboard";
 
 // admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -45,6 +46,7 @@ export default function App() {
           <Route path="/profile" element={<Profile />} />
           <Route path="/edit-profile" element={<EditProfile />} />
           <Route path="/city/:cityName" element={<CityPage />} />
+          <Route path="/analytics" element={<AnalyticsDashboard />} />
 
           {/* admin routes */}
           <Route path="/admin/dashboard" element={<AdminDashboard />} />

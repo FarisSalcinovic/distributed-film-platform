@@ -13,8 +13,8 @@ export default function Navbar() {
          </Link></div>
 
       {/* Center: Navigation links */}
-      <ul className="flex gap-8 text-gray-700 font-medium">
-        <li className="hover:text-blue-600 cursor-pointer">
+      <ul className="flex gap-8 text-gray-700 font-bold">
+        <li className="text-purple-700 hover:text-blue-600 cursor-pointer">
           <Link to="/">Home</Link></li>
         <li className="hover:text-blue-600 cursor-pointer">Discover</li>
         <li className="hover:text-blue-600 cursor-pointer">Trending</li>
