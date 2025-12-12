@@ -14,7 +14,7 @@ import os
 import uuid
 from typing import Optional
 
-from .dependencies.auth import require_admin
+from .dependencies.auth import require_admin, get_current_user
 
 # Dodajemo putanju da bi mogli importovati app module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -250,7 +250,7 @@ async def logout_user():
 
 
 @auth_router.get("/me")
-async def get_current_user_info(current_user: User = Depends(lambda: get_current_user())):
+async def get_current_user_info(current_user: User = Depends(get_current_user)):
     """Get current user information"""
     return {
         "id": current_user.id,
@@ -258,7 +258,8 @@ async def get_current_user_info(current_user: User = Depends(lambda: get_current
         "email": current_user.email,
         "full_name": current_user.full_name,
         "role": current_user.role,
-        "created_at": current_user.created_at
+        "created_at": current_user.created_at,
+        "is_active": current_user.is_active
     }
 
 
