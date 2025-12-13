@@ -1,65 +1,107 @@
-// frontend/src/App.js - AŽURIRANO
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
-import Navbar from './components/Navbar';
-import PrivateRoute from './components/PrivateRoute';
-import Home from './pages/Home';
-import Login from './components/Login';
-import Register from './components/Register';
-import Dashboard from './pages/Dashboard';
-import ETLDashboard from './components/ETLDashboard'; // NOVO
-import DataExplorer from './pages/DataExplorer';     // NOVO
-import './index.css';
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 
-function App() {
+import Navbar from "./components/Navbar";
+import HeroSection from "./components/HeroSection";
+import TrendingCities from "./components/TrendingCities";
+import PopularGenres from "./components/PopularGenres";
+import RecentSearches from "./components/RecentSearches";
+import Footer from "./components/Footer";
+
+import Profile from "./pages/Profile"; // nove stranice
+import EditProfile from "./pages/EditProfile";
+import CityPage from "./pages/CityPage";
+import AnalyticsDashboard from "./pages/AnalyticsDashboard";
+
+// admin pages
+import AdminDashboard from "./pages/admin/Dashboard";
+import Users from "./pages/admin/Users"; 
+import UserDetails from "./pages/admin/UserDetails";
+import ETL from "./pages/admin/ETL";
+import Stats from "./pages/admin/Stats";
+import DataView from "./pages/admin/DataView";
+import AdminLayout from "./pages/admin/AdminLayout";
+
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import ProtectedRoute from "./pages/ProtectedRoute";
+
+export default function App() {
   return (
-    <AuthProvider>
-      <Router>
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-          <Navbar />
-          <main style={{ flex: 1, padding: '20px 0' }}>
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route
-                path="/dashboard"
-                element={
-                  <PrivateRoute>
-                    <Dashboard />
-                  </PrivateRoute>
-                }
-              />
-              {/* NOVE RUTE */}
-              <Route
-                path="/etl-dashboard"
-                element={
-                  <PrivateRoute>
-                    <ETLDashboard />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/data-explorer"
-                element={
-                  <PrivateRoute>
-                    <DataExplorer />
-                  </PrivateRoute>
-                }
-              />
-              <Route path="*" element={<Navigate to="/" />} />
-            </Routes>
-          </main>
-          <footer className="footer">
-            <div className="container">
-              <p>© 2024 Distributed Film Platform. All rights reserved.</p>
-            </div>
-          </footer>
-        </div>
+    <Router>
+      <div className="min-h-screen bg-sky-50">
+        <Navbar />
+
+        <Routes>
+          
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+
+          {/* Home Page but protected */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <>
+                  <HeroSection />
+                  <TrendingCities />
+                  <PopularGenres />
+                  <RecentSearches />
+                </>
+              </ProtectedRoute>
+            }
+          />
+
+
+          {/* rute navigacija but protected */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/edit-profile"
+            element={
+              <ProtectedRoute>
+                <EditProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/city/:cityName"
+            element={
+              <ProtectedRoute>
+                <CityPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AnalyticsDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+
+          {/* admin routes */}
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/users" element={<Users />} />
+          <Route path="/admin/user/:id" element={<UserDetails />} />
+          <Route path="/admin/etl" element={<ETL />} />
+          <Route path="/admin/stats" element={<Stats />} />
+          <Route path="/admin/data" element={<DataView />} />
+
+        </Routes>
+
+        <Footer />
+       </div>
       </Router>
-    </AuthProvider>
   );
 }
-
-export default App;
