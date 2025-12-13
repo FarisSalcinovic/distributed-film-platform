@@ -21,6 +21,10 @@ import Stats from "./pages/admin/Stats";
 import DataView from "./pages/admin/DataView";
 import AdminLayout from "./pages/admin/AdminLayout";
 
+import Login from "./pages/Login";
+import Signup from "./pages/Signup";
+import ProtectedRoute from "./pages/ProtectedRoute";
+
 export default function App() {
   return (
     <Router>
@@ -28,25 +32,63 @@ export default function App() {
         <Navbar />
 
         <Routes>
+          
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
 
-          {/* Home Page */}
+          {/* Home Page but protected */}
           <Route
             path="/"
             element={
-              <>
-                <HeroSection />
-                <TrendingCities />
-                <PopularGenres />
-                <RecentSearches />
-              </>
+              <ProtectedRoute>
+                <>
+                  <HeroSection />
+                  <TrendingCities />
+                  <PopularGenres />
+                  <RecentSearches />
+                </>
+              </ProtectedRoute>
             }
           />
 
-          {/* rute navigacija */}
-          <Route path="/profile" element={<Profile />} />
-          <Route path="/edit-profile" element={<EditProfile />} />
-          <Route path="/city/:cityName" element={<CityPage />} />
-          <Route path="/analytics" element={<AnalyticsDashboard />} />
+
+          {/* rute navigacija but protected */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <Profile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/edit-profile"
+            element={
+              <ProtectedRoute>
+                <EditProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/city/:cityName"
+            element={
+              <ProtectedRoute>
+                <CityPage />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <AnalyticsDashboard />
+              </ProtectedRoute>
+            }
+          />
+
 
           {/* admin routes */}
           <Route path="/admin/dashboard" element={<AdminDashboard />} />

@@ -24,15 +24,7 @@ export default function AnalyticsDashboard() {
       <main className="flex-1 p-10">
 
         {/* PAGE TITLE */}
-        <h1 className="text-3xl font-bold mb-2">Analytics Dashboard</h1>
-
-        {/* BACK TO PROFILE */}
-        <Link
-          to="/profile"
-          className="inline-block mb-6 px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-purple-200 transition font-medium"
-        >
-          ← Back to Profile
-        </Link>
+        <h1 className="text-3xl font-bold mb-6">Analytics Dashboard</h1>
 
         {/* SUMMARY CARDS */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">

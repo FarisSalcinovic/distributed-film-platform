@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 export default function Profile() {
   // TEMP USER MOCK (later replaced by backend)
@@ -7,6 +8,16 @@ export default function Profile() {
     email: "sarah@mail.com",
     role: "admin" // change to "user" to hide admin panel link
   };
+
+  const navigate = useNavigate();
+
+  function handleLogout() {
+    localStorage.removeItem("token");
+    navigate("/login");
+  }
+
+
+
 
   return (
     <div className="flex min-h-screen bg-sky-50">
@@ -63,12 +74,13 @@ export default function Profile() {
             </Link>
           )}
 
-          <Link
-            to="/"
-            className="block px-3 py-2 rounded-lg hover:bg-red-100 text-red-600 font-medium"
+          <button
+          onClick={handleLogout}
+          className="block w-full text-right px-3 py-2 rounded-lg hover:bg-red-100 text-red-600 font-medium"
           >
             Logout
-          </Link>
+          </button>
+
         </nav>
       </aside>
 
