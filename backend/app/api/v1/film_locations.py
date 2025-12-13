@@ -1,264 +1,402 @@
 # backend/app/api/v1/film_locations.py
-from fastapi import APIRouter, Depends, Query, HTTPException
-from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
+import logging
+
 from ...db import get_mongo_client
-from ...dependencies.auth import get_current_user
-from ...models.user import User
 from ...config import settings
-from ...services.etl.geodb_service import GeoDBServices
-import asyncio
 
-router = APIRouter(prefix="/film-locations", tags=["Film Locations Analytics"])
+router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
-@router.get("/movies-by-country")
-async def get_movies_by_country(
-        current_user: User = Depends(get_current_user),
-        min_movies: int = Query(1, ge=1),
+@router.get("/films/locations", tags=["Analytics"])
+async def get_films_with_locations(
+        limit: int = Query(50, ge=1, le=1000),
+        skip: int = Query(0, ge=0),
+        country: Optional[str] = None,
+        genre: Optional[str] = None,
+        year: Optional[int] = None
+):
+    """
+    Vraća filmove sa lokacijama sa filterima
+    """
+    try:
+        client = get_mongo_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB not connected")
+
+        db = client[settings.MONGO_DB]
+        films_collection = db["films"]
+        locations_collection = db["film_locations"]
+
+        # Build filter
+        filter_query = {}
+        if country:
+            filter_query["production_countries"] = {"$regex": country, "$options": "i"}
+        if genre:
+            filter_query["genres"] = {"$regex": genre, "$options": "i"}
+        if year:
+            filter_query["release_date"] = {"$regex": f"^{year}"}
+
+        # Get films - DODAJ AWAIT!
+        films_cursor = films_collection.find(
+            filter_query,
+            {"_id": 0, "film_id": 1, "title": 1, "release_date": 1, "genres": 1,
+             "production_countries": 1, "popularity": 1, "vote_average": 1}
+        ).sort("popularity", -1).skip(skip).limit(limit)
+
+        films = await films_cursor.to_list(length=limit)
+
+        # Get locations for each film
+        for film in films:
+            film_id = film.get("film_id")
+            locations_cursor = locations_collection.find(
+                {"film_id": film_id},
+                {"_id": 0, "city_name": 1, "country": 1, "latitude": 1, "longitude": 1, "confidence": 1}
+            ).limit(5)
+            locations = await locations_cursor.to_list(length=5)
+            film["locations"] = locations
+            film["locations_count"] = len(locations)
+
+        return {
+            "total": len(films),
+            "limit": limit,
+            "skip": skip,
+            "filters": {
+                "country": country,
+                "genre": genre,
+                "year": year
+            },
+            "films": films
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting films with locations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/films/trending", tags=["Analytics"])
+async def get_trending_films(
+        days: int = Query(7, ge=1, le=30),
         limit: int = Query(20, ge=1, le=100)
 ):
-    """Vraća filmove grupisane po zemljama produkcije"""
-    client = get_mongo_client()
-    if not client:
-        raise HTTPException(status_code=500, detail="MongoDB not connected")
+    """
+    Vraća trenutno popularne filmove (basirano na popularity score)
+    """
+    try:
+        client = get_mongo_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB not connected")
 
-    db = client[settings.MONGO_DB]
+        db = client[settings.MONGO_DB]
+        films_collection = db["films"]
 
-    pipeline = [
-        {"$match": {"production_countries": {"$exists": True, "$ne": []}}},
-        {"$unwind": "$production_countries"},
-        {"$group": {
-            "_id": "$production_countries",
-            "movies": {"$push": {"title": "$title", "release_date": "$release_date", "vote_average": "$vote_average"}},
-            "count": {"$sum": 1},
-            "avg_rating": {"$avg": "$vote_average"},
-            "total_budget": {"$sum": "$budget"}
-        }},
-        {"$match": {"count": {"$gte": min_movies}}},
-        {"$sort": {"count": -1}},
-        {"$limit": limit}
-    ]
+        # Calculate date threshold
+        threshold_date = datetime.utcnow() - timedelta(days=days)
 
-    results = list(db.movies.aggregate(pipeline))
-
-    # Obogatite sa GeoDB podacima
-    geo_service = GeoDBServices()
-    enriched_results = []
-
-    for result in results:
-        country_name = result["_id"]
-        # Pokušajte dobiti gradove za ovu zemlju
-        try:
-            # Ovo je pojednostavljeno - trebali biste mapirati nazive zemalja na country codes
-            if country_name == "United States":
-                cities = await geo_service.get_cities_by_country("US", limit=5)
-            elif country_name == "United Kingdom":
-                cities = await geo_service.get_cities_by_country("GB", limit=5)
-            elif country_name == "France":
-                cities = await geo_service.get_cities_by_country("FR", limit=5)
-            elif country_name == "Germany":
-                cities = await geo_service.get_cities_by_country("DE", limit=5)
-            else:
-                cities = []
-
-            result["major_cities"] = cities
-        except Exception as e:
-            result["major_cities"] = []
-            result["geo_error"] = str(e)
-
-        enriched_results.append(result)
-
-    return {"countries": enriched_results}
-
-
-@router.get("/find-filming-locations")
-async def find_filming_locations(
-        current_user: User = Depends(get_current_user),
-        city_name: Optional[str] = Query(None),
-        country_code: Optional[str] = Query(None),
-        radius_km: int = Query(100, ge=1, le=500)
-):
-    """Pronalazi moguće lokacije za snimanje na osnovu geografskih parametara"""
-    geo_service = GeoDBServices()
-
-    if city_name:
-        # Pretraži gradove po nazivu
-        result = await geo_service.search_cities(city_name, limit=10)
-        cities = result.get("data", [])
-    elif country_code:
-        # Dohvati gradove po zemlji
-        cities = await geo_service.get_cities_by_country(country_code, limit=20)
-    else:
-        raise HTTPException(status_code=400, detail="Either city_name or country_code must be provided")
-
-    # Dohvati filmove koji bi mogli biti snimani u ovim gradovima
-    client = get_mongo_client()
-    if not client:
-        raise HTTPException(status_code=500, detail="MongoDB not connected")
-
-    db = client[settings.MONGO_DB]
-
-    # Pretpostavimo da imamo neku logiku za match-ovanje
-    # Ovo je pojednostavljena verzija
-    films = list(db.movies.find(
-        {"vote_average": {"$gte": 7.0}},
-        {"title": 1, "genres": 1, "production_countries": 1, "budget": 1}
-    ).limit(10))
-
-    return {
-        "search_criteria": {"city_name": city_name, "country_code": country_code},
-        "found_cities": len(cities),
-        "cities": cities[:5],  # Vrati samo prvih 5
-        "suggested_films": [
+        # Get trending films - DODAJ AWAIT!
+        films_cursor = films_collection.find(
             {
-                "title": film["title"],
-                "genres": film.get("genres", []),
-                "countries": film.get("production_countries", []),
-                "suitable_locations": cities[:3] if cities else []
-            }
-            for film in films
-        ]
-    }
+                "$or": [
+                    {"fetched_at": {"$gte": threshold_date}},
+                    {"release_date": {"$regex": f"^{datetime.now().year}"}}
+                ]
+            },
+            {"_id": 0, "film_id": 1, "title": 1, "release_date": 1, "overview": 1,
+             "popularity": 1, "vote_average": 1, "vote_count": 1, "genres": 1}
+        ).sort([("popularity", -1), ("vote_average", -1)]).limit(limit)
 
+        films = await films_cursor.to_list(length=limit)
 
-@router.get("/production-hotspots")
-async def get_production_hotspots(
-        current_user: User = Depends(get_current_user),
-        min_budget: int = Query(1000000, ge=0)
-):
-    """Identificira 'hotspot' gradove za filmsku produkciju na osnovu filmskih podataka"""
-    client = get_mongo_client()
-    if not client:
-        raise HTTPException(status_code=500, detail="MongoDB not connected")
+        # Calculate trending score
+        for film in films:
+            popularity = film.get("popularity", 0)
+            vote_avg = film.get("vote_average", 0)
+            vote_count = film.get("vote_count", 0)
 
-    db = client[settings.MONGO_DB]
+            # Simple trending algorithm
+            trending_score = (popularity * 0.5) + (vote_avg * 20 * 0.3) + (min(vote_count, 1000) / 1000 * 0.2)
+            film["trending_score"] = round(trending_score, 2)
 
-    # Dohvati filmove sa velikim budžetom
-    films = list(db.movies.find(
-        {"budget": {"$gte": min_budget}},
-        {"title": 1, "production_countries": 1, "budget": 1, "revenue": 1}
-    ).limit(50))
+        # Sort by trending score
+        films.sort(key=lambda x: x.get("trending_score", 0), reverse=True)
 
-    # Analiziraj koje zemlje su najzastupljenije
-    country_stats = {}
-    for film in films:
-        for country in film.get("production_countries", []):
-            if country not in country_stats:
-                country_stats[country] = {
-                    "film_count": 0,
-                    "total_budget": 0,
-                    "total_revenue": 0,
-                    "films": []
-                }
-
-            country_stats[country]["film_count"] += 1
-            country_stats[country]["total_budget"] += film.get("budget", 0)
-            country_stats[country]["total_revenue"] += film.get("revenue", 0)
-            country_stats[country]["films"].append(film["title"])
-
-    # Sortiraj zemlje po budžetu
-    sorted_countries = sorted(
-        country_stats.items(),
-        key=lambda x: x[1]["total_budget"],
-        reverse=True
-    )[:10]
-
-    # Dohvati gradove za top zemlje
-    geo_service = GeoDBServices()
-    hotspots = []
-
-    for country_name, stats in sorted_countries:
-        try:
-            # Mapiraj naziv zemlje na country code
-            country_map = {
-                "United States": "US",
-                "United Kingdom": "GB",
-                "France": "FR",
-                "Germany": "DE",
-                "Italy": "IT",
-                "Spain": "ES",
-                "Canada": "CA",
-                "Australia": "AU"
-            }
-
-            country_code = country_map.get(country_name)
-            if country_code:
-                cities = await geo_service.get_cities_by_country(country_code, limit=5)
-                stats["major_cities"] = cities
-            else:
-                stats["major_cities"] = []
-
-        except Exception as e:
-            stats["major_cities"] = []
-            stats["geo_error"] = str(e)
-
-        hotspots.append({
-            "country": country_name,
-            **stats
-        })
-
-    return {
-        "hotspots": hotspots,
-        "analysis": "Production hotspots based on film budget and frequency"
-    }
-
-
-@router.get("/compare-locations")
-async def compare_locations(
-        current_user: User = Depends(get_current_user),
-        city1: str = Query(..., description="First city name"),
-        city2: str = Query(..., description="Second city name")
-):
-    """Upoređuje dva grada kao potencijalne lokacije za filmsku produkciju"""
-    geo_service = GeoDBServices()
-
-    # Pretraži oba grada
-    result1 = await geo_service.search_cities(city1, limit=5)
-    result2 = await geo_service.search_cities(city2, limit=5)
-
-    cities1 = result1.get("data", [])
-    cities2 = result2.get("data", [])
-
-    if not cities1 or not cities2:
-        raise HTTPException(status_code=404, detail="One or both cities not found")
-
-    city1_data = cities1[0]
-    city2_data = cities2[0]
-
-    # Dohvati filmove koji bi mogli biti relevantni
-    client = get_mongo_client()
-    if not client:
-        raise HTTPException(status_code=500, detail="MongoDB not connected")
-
-    db = client[settings.MONGO_DB]
-
-    # Pretpostavimo neku logiku za preporuku filmova
-    films = list(db.movies.find(
-        {"vote_average": {"$gte": 6.0}},
-        {"title": 1, "genres": 1, "production_countries": 1}
-    ).limit(5))
-
-    comparison = {
-        "city1": {
-            "name": city1_data.get("name"),
-            "country": city1_data.get("country"),
-            "population": city1_data.get("population"),
-            "latitude": city1_data.get("latitude"),
-            "longitude": city1_data.get("longitude")
-        },
-        "city2": {
-            "name": city2_data.get("name"),
-            "country": city2_data.get("country"),
-            "population": city2_data.get("population"),
-            "latitude": city2_data.get("latitude"),
-            "longitude": city2_data.get("longitude")
-        },
-        "suggested_films": films,
-        "analysis": {
-            "city1_better_for": ["Large productions" if city1_data.get("population", 0) > 1000000 else "Indie films"],
-            "city2_better_for": ["Large productions" if city2_data.get("population", 0) > 1000000 else "Indie films"],
-            "recommendation": "Both cities have potential depending on film type"
+        return {
+            "period_days": days,
+            "total": len(films),
+            "films": films[:limit]
         }
-    }
 
-    return comparison
+    except Exception as e:
+        logger.error(f"Error getting trending films: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/cities/popular", tags=["Analytics"])
+async def get_popular_cities(
+        limit: int = Query(20, ge=1, le=100),
+        min_population: int = Query(100000, ge=0),
+        country_code: Optional[str] = None
+):
+    """
+    Vraća popularne gradove za filmsku produkciju
+    """
+    try:
+        client = get_mongo_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB not connected")
+
+        db = client[settings.MONGO_DB]
+        cities_collection = db["cities"]
+        locations_collection = db["film_locations"]
+
+        # Build filter
+        filter_query = {"population": {"$gte": min_population}}
+        if country_code:
+            filter_query["country_code"] = country_code.upper()
+
+        # Get popular cities - DODAJ AWAIT!
+        cities_cursor = cities_collection.find(
+            filter_query,
+            {"_id": 0, "city_id": 1, "name": 1, "country": 1, "country_code": 1,
+             "population": 1, "latitude": 1, "longitude": 1}
+        ).sort("population", -1).limit(limit)
+
+        cities = await cities_cursor.to_list(length=limit)
+
+        # Get film count for each city
+        for city in cities:
+            city_id = city.get("city_id")
+            film_count = await locations_collection.count_documents({"city_id": city_id})
+            city["film_count"] = film_count
+
+            # Get sample films
+            sample_films_cursor = locations_collection.find(
+                {"city_id": city_id},
+                {"_id": 0, "film_id": 1, "film_title": 1}
+            ).limit(3)
+            sample_films = await sample_films_cursor.to_list(length=3)
+            city["sample_films"] = [film.get("film_title") for film in sample_films if film.get("film_title")]
+
+        # Sort by film count (most film-friendly cities first)
+        cities.sort(key=lambda x: x.get("film_count", 0), reverse=True)
+
+        return {
+            "total": len(cities),
+            "min_population": min_population,
+            "country_filter": country_code,
+            "cities": cities
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting popular cities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/films-by-country", tags=["Analytics"])
+async def get_films_by_country():
+    """
+    Analiza filmova po zemljama produkcije
+    """
+    try:
+        client = get_mongo_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB not connected")
+
+        db = client[settings.MONGO_DB]
+        films_collection = db["films"]
+
+        # Aggregate films by country - DODAJ AWAIT!
+        pipeline = [
+            {"$unwind": "$production_countries"},
+            {"$group": {
+                "_id": "$production_countries",
+                "film_count": {"$sum": 1},
+                "avg_popularity": {"$avg": "$popularity"},
+                "avg_vote": {"$avg": "$vote_average"},
+                "total_votes": {"$sum": "$vote_count"},
+                "sample_films": {"$push": {"title": "$title", "popularity": "$popularity"}}
+            }},
+            {"$sort": {"film_count": -1}},
+            {"$limit": 20},
+            {"$project": {
+                "_id": 0,
+                "country": "$_id",
+                "film_count": 1,
+                "avg_popularity": {"$round": ["$avg_popularity", 2]},
+                "avg_vote": {"$round": ["$avg_vote", 2]},
+                "total_votes": 1,
+                "sample_films": {"$slice": ["$sample_films", 3]}
+            }}
+        ]
+
+        results_cursor = films_collection.aggregate(pipeline)
+        results = await results_cursor.to_list(length=20)
+
+        # Get total stats - DODAJ AWAIT!
+        total_films = await films_collection.count_documents({})
+
+        return {
+            "total_films": total_films,
+            "countries_analyzed": len(results),
+            "data": results
+        }
+
+    except Exception as e:
+        logger.error(f"Error analyzing films by country: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/cities-near-films", tags=["Analytics"])
+async def get_cities_near_film_locations(
+        radius_km: int = Query(100, ge=10, le=500),
+        limit: int = Query(20, ge=1, le=100)
+):
+    """
+    Pronalazi gradove u blizini filmskih lokacija
+    """
+    try:
+        client = get_mongo_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB not connected")
+
+        db = client[settings.MONGO_DB]
+        locations_collection = db["film_locations"]
+        cities_collection = db["cities"]
+
+        # Get unique film locations - DODAJ AWAIT!
+        pipeline = [
+            {"$group": {
+                "_id": {"city_id": "$city_id", "city_name": "$city_name"},
+                "film_count": {"$sum": 1},
+                "latitude": {"$first": "$latitude"},
+                "longitude": {"$first": "$longitude"},
+                "sample_films": {"$push": "$film_title"}
+            }},
+            {"$limit": 50}
+        ]
+
+        unique_locations_cursor = locations_collection.aggregate(pipeline)
+        unique_locations = await unique_locations_cursor.to_list(length=50)
+
+        nearby_cities = []
+
+        for loc in unique_locations:
+            if not loc.get("latitude") or not loc.get("longitude"):
+                continue
+
+            lat = loc["latitude"]
+            lng = loc["longitude"]
+
+            # Find cities within radius - DODAJ AWAIT!
+            nearby_cursor = cities_collection.find({
+                "latitude": {"$gte": lat - (radius_km / 111), "$lte": lat + (radius_km / 111)},
+                "longitude": {"$gte": lng - (radius_km / (111 * abs(lat))),
+                              "$lte": lng + (radius_km / (111 * abs(lat)))},
+                "city_id": {"$ne": loc["_id"]["city_id"]}
+            }, {
+                "_id": 0, "city_id": 1, "name": 1, "country": 1,
+                "population": 1, "latitude": 1, "longitude": 1
+            }).limit(5)
+
+            nearby = await nearby_cursor.to_list(length=5)
+
+            for city in nearby:
+                # Calculate approximate distance
+                distance = ((city["latitude"] - lat) ** 2 + (city["longitude"] - lng) ** 2) ** 0.5 * 111
+                if distance <= radius_km:
+                    nearby_cities.append({
+                        **city,
+                        "distance_km": round(distance, 1),
+                        "near_film_location": loc["_id"]["city_name"],
+                        "film_count_at_location": loc["film_count"],
+                        "sample_films": loc["sample_films"][:2]
+                    })
+
+        # Remove duplicates and sort
+        unique_nearby = {}
+        for city in nearby_cities:
+            key = f"{city['city_id']}_{city['near_film_location']}"
+            if key not in unique_nearby:
+                unique_nearby[key] = city
+
+        result = sorted(unique_nearby.values(), key=lambda x: x["distance_km"])[:limit]
+
+        return {
+            "radius_km": radius_km,
+            "locations_analyzed": len(unique_locations),
+            "nearby_cities_found": len(result),
+            "cities": result
+        }
+
+    except Exception as e:
+        logger.error(f"Error finding cities near film locations: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analytics/stats", tags=["Analytics"])
+async def get_analytics_stats():
+    """
+    Osnovne statistike platforme
+    """
+    try:
+        client = get_mongo_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="MongoDB not connected")
+
+        db = client[settings.MONGO_DB]
+
+        # Count documents - SVI DODAJ AWAIT!
+        film_count = await db["films"].count_documents({})
+        city_count = await db["cities"].count_documents({})
+        location_count = await db["film_locations"].count_documents({})
+        etl_job_count = await db["etl_jobs"].count_documents({})
+
+        # Get latest film - DODAJ AWAIT!
+        latest_film_cursor = db["films"].find_one(
+            {},
+            {"_id": 0, "title": 1, "release_date": 1, "fetched_at": 1},
+            sort=[("fetched_at", -1)]
+        )
+        latest_film = await latest_film_cursor
+
+        # Get ETL stats - DODAJ AWAIT!
+        pipeline = [
+            {"$group": {
+                "_id": "$job_type",
+                "count": {"$sum": 1},
+                "last_run": {"$max": "$started_at"},
+                "success_rate": {
+                    "$avg": {
+                        "$cond": [{"$eq": ["$status", "completed"]}, 1, 0]
+                    }
+                }
+            }}
+        ]
+
+        etl_stats_cursor = db["etl_jobs"].aggregate(pipeline)
+        etl_stats = await etl_stats_cursor.to_list(length=None)
+
+        return {
+            "timestamp": datetime.utcnow().isoformat(),
+            "counts": {
+                "films": film_count,
+                "cities": city_count,
+                "film_locations": location_count,
+                "etl_jobs": etl_job_count
+            },
+            "latest_film": latest_film,
+            "etl_stats": etl_stats,
+            "collection_sizes": {
+                "films": "movies from TMDB",
+                "cities": "cities from GeoDB",
+                "film_locations": "film-city associations",
+                "etl_jobs": "ETL execution history"
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting analytics stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

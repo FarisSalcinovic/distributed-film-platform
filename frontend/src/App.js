@@ -1,3 +1,4 @@
+// frontend/src/App.js - AŽURIRANO
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
@@ -7,6 +8,8 @@ import Home from './pages/Home';
 import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './pages/Dashboard';
+import ETLDashboard from './components/ETLDashboard'; // NOVO
+import DataExplorer from './pages/DataExplorer';     // NOVO
 import './index.css';
 
 function App() {
@@ -25,6 +28,23 @@ function App() {
                 element={
                   <PrivateRoute>
                     <Dashboard />
+                  </PrivateRoute>
+                }
+              />
+              {/* NOVE RUTE */}
+              <Route
+                path="/etl-dashboard"
+                element={
+                  <PrivateRoute>
+                    <ETLDashboard />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/data-explorer"
+                element={
+                  <PrivateRoute>
+                    <DataExplorer />
                   </PrivateRoute>
                 }
               />

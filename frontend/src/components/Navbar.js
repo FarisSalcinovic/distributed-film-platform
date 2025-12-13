@@ -1,5 +1,8 @@
+// frontend/src/components/Navbar.js - AŽURIRANO
 import React from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
+import './Navbar.css'; // Kreirajte ovaj CSS fajl
 
 const Navbar = () => {
   const { user, logout, isAuthenticated } = useAuth();
@@ -13,37 +16,46 @@ const Navbar = () => {
     <nav className="navbar">
       <div className="navbar-container">
         <div className="navbar-brand">
-          <a href="/" className="navbar-brand">
-            Film Platform
-          </a>
+          <Link to="/" className="navbar-logo">
+            🎬 Film Platform
+          </Link>
         </div>
 
-        <div className="navbar-links">
+        <div className="navbar-menu">
           {isAuthenticated ? (
             <>
-              <span style={{ marginRight: '15px' }}>Welcome, {user?.username}</span>
-              <button
-                onClick={handleLogout}
-                className="btn btn-danger"
-              >
-                Logout
-              </button>
+              <div className="navbar-links">
+                <Link to="/dashboard" className="nav-link">
+                  Dashboard
+                </Link>
+                <Link to="/etl-dashboard" className="nav-link">
+                  🚀 ETL Dashboard
+                </Link>
+                <Link to="/data-explorer" className="nav-link">
+                  🔍 Data Explorer
+                </Link>
+              </div>
+              <div className="navbar-user">
+                <span className="welcome-text">
+                  Welcome, <strong>{user?.username}</strong>
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="btn btn-logout"
+                >
+                  Logout
+                </button>
+              </div>
             </>
           ) : (
-            <>
-              <a
-                href="/login"
-                className="btn btn-primary"
-              >
+            <div className="navbar-auth">
+              <Link to="/login" className="btn btn-login">
                 Login
-              </a>
-              <a
-                href="/register"
-                className="btn btn-success"
-              >
+              </Link>
+              <Link to="/register" className="btn btn-register">
                 Register
-              </a>
-            </>
+              </Link>
+            </div>
           )}
         </div>
       </div>

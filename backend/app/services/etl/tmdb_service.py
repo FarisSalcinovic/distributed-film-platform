@@ -1,206 +1,239 @@
-# backend/app/services/etl/tmdb_service.py
 import httpx
-from datetime import datetime, timezone
-from typing import List, Dict, Optional, Any
-import asyncio
-from ...config import settings
+from typing import List, Dict, Any
+from datetime import datetime
 import logging
+
+from sqlalchemy.util.concurrency import asyncio
+
+from ...config import settings
 
 logger = logging.getLogger(__name__)
 
 
-class TMDBServices:
-    # backend/app/services/etl/tmdb_service.py - ažurirajte __init__ metodu:
+class TMDBService:
     def __init__(self):
-        self.base_url = "https://api.themoviedb.org/3"  # Hardkodirajte ili koristite settings
         self.api_key = settings.TMDB_API_KEY
-        self.headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+        self.base_url = settings.TMDB_BASE_URL
+        self.access_token = settings.TMDB_ACCESS_TOKEN
+
+        # Koristi API KEY u query parametru za v3 API
+        # Koristi ACCESS TOKEN u headeru za v4 API (ako je potrebno)
         self.timeout = httpx.Timeout(30.0, connect=10.0)
 
-    async def get_trending_movies(self, time_window: str = "day", limit: int = 20) -> List[Dict]:
-        """Dohvata trenutno popularne filmove"""
+        logger.info(f"TMDBService initialized with API key: {self.api_key[:10]}...")
+
+    async def fetch_trending_movies(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fetch trending movies from TMDB - ISPRAVLJENO!"""
         try:
+            logger.info(f"Fetching trending movies from TMDB, limit: {limit}")
+
+            # ISPRAVLJENO: Koristi api_key u query parametru
+            url = f"{self.base_url}/trending/movie/week"
+            params = {
+                "api_key": self.api_key,  # OVO JE KLJUČNO - NE KORISTI Bearer token!
+                "language": "en-US",
+                "page": 1
+            }
+
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/trending/movie/{time_window}",
-                    headers=self.headers,
-                    params={"language": "en-US"}
-                )
+                response = await client.get(url, params=params)
+
+                if response.status_code == 401:
+                    logger.error(f"TMDB 401 Unauthorized. API Key: {self.api_key[:10]}...")
+                    logger.error("Provjeri da li je TMDB_API_KEY ispravan u .env fajlu")
+                    return []
+
                 response.raise_for_status()
                 data = response.json()
 
-                results = data.get("results", [])
-                logger.info(f"Fetched {len(results)} trending movies")
+                movies = data.get("results", [])[:limit]
+                logger.info(f"Fetched {len(movies)} trending movies from TMDB")
+                return movies
 
-                # Enrich with details for top movies
-                enriched_movies = []
-                for movie in results[:min(limit, 10)]:  # Get details for top 10
-                    try:
-                        details = await self.get_movie_details(movie["id"])
-                        movie.update(details)
-                        enriched_movies.append(movie)
-                    except Exception as e:
-                        logger.error(f"Error getting details for movie {movie['id']}: {e}")
-                        enriched_movies.append(movie)
-
-                return enriched_movies[:limit]
-
-        except httpx.RequestError as e:
-            logger.error(f"Request error fetching trending movies: {e}")
-            raise
+        except httpx.HTTPStatusError as e:
+            logger.error(f"TMDB API error: {e.response.status_code} - {e.response.text}")
+            return []
         except Exception as e:
-            logger.error(f"Error fetching trending movies: {e}")
-            raise
+            logger.error(f"Error fetching TMDB data: {e}")
+            return []
 
-    async def get_movie_details(self, movie_id: int) -> Dict[str, Any]:
-        """Dohvata detalje o filmu"""
+    async def fetch_movie_details(self, movie_id: int) -> Dict[str, Any]:
+        """Fetch detailed movie information including credits"""
         try:
+            # Get movie details
+            details_url = f"{self.base_url}/movie/{movie_id}"
+            credits_url = f"{self.base_url}/movie/{movie_id}/credits"
+
+            params = {
+                "api_key": self.api_key,
+                "language": "en-US"
+            }
+
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/movie/{movie_id}",
-                    headers=self.headers,
-                    params={
-                        "language": "en-US",
-                        "append_to_response": "credits,release_dates"
-                    }
+                # Make parallel requests
+                details_response, credits_response = await asyncio.gather(
+                    client.get(details_url, params=params),
+                    client.get(credits_url, params=params)
                 )
-                response.raise_for_status()
-                data = response.json()
 
-                # Extract relevant information
-                movie_details = {
-                    "tmdb_id": data.get("id"),
-                    "title": data.get("title"),
-                    "original_title": data.get("original_title"),
-                    "overview": data.get("overview"),
-                    "release_date": data.get("release_date"),
-                    "runtime": data.get("runtime"),
-                    "budget": data.get("budget"),
-                    "revenue": data.get("revenue"),
-                    "popularity": data.get("popularity"),
-                    "vote_average": data.get("vote_average"),
-                    "vote_count": data.get("vote_count"),
-                    "status": data.get("status"),
-                    "tagline": data.get("tagline"),
-                    "genres": [genre["name"] for genre in data.get("genres", [])],
-                    "genre_ids": [genre["id"] for genre in data.get("genres", [])],
-                    "production_companies": [
-                        company["name"] for company in data.get("production_companies", [])
-                    ],
-                    "production_countries": [
-                        country["name"] for country in data.get("production_countries", [])
-                    ],
-                    "spoken_languages": [
-                        lang["name"] for lang in data.get("spoken_languages", [])
-                    ],
-                    "cast": [
-                        {
-                            "name": cast["name"],
-                            "character": cast["character"],
-                            "order": cast["order"]
-                        }
-                        for cast in data.get("credits", {}).get("cast", [])[:5]
-                    ] if data.get("credits") else [],
-                    "crew": [
-                        {
-                            "name": crew["name"],
-                            "job": crew["job"]
-                        }
-                        for crew in data.get("credits", {}).get("crew", [])[:3]
-                        if crew["job"] in ["Director", "Producer", "Screenplay"]
-                    ] if data.get("credits") else []
-                }
+                details_response.raise_for_status()
+                movie_data = details_response.json()
 
-                return movie_details
+                if credits_response.status_code == 200:
+                    credits_data = credits_response.json()
+                    movie_data["credits"] = credits_data
+                else:
+                    movie_data["credits"] = {}
 
-        except httpx.RequestError as e:
-            logger.error(f"Request error fetching movie details {movie_id}: {e}")
-            raise
+                return movie_data
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error fetching movie details {movie_id}: {e}")
+            return {}
         except Exception as e:
             logger.error(f"Error fetching movie details {movie_id}: {e}")
-            raise
+            return {}
 
-    async def search_movies(self, query: str, year: Optional[int] = None, page: int = 1) -> Dict:
-        """Pretraga filmova"""
+    async def extract_film_locations(self, movie_data: Dict[str, Any]) -> List[str]:
+        """Extract filming locations from movie data"""
+        locations = []
+
+        # Koristi production countries iz TMDB podataka
+        production_countries = movie_data.get("production_countries", [])
+        for country in production_countries[:2]:
+            country_name = country.get("name", "")
+            if country_name:
+                locations.append(f"Production in {country_name}")
+
+        # Dodaj generic lokacije
+        if movie_data.get("original_language"):
+            lang = movie_data["original_language"]
+            if lang == "en":
+                locations.append("Hollywood studios")
+            elif lang == "hi":
+                locations.append("Bollywood studios")
+            elif lang == "ko":
+                locations.append("Korean film studios")
+
+        if not locations:
+            locations.append("Location data not available")
+
+        return locations
+
+    async def transform_movie_data(self, movie_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform raw TMDB data to our schema"""
         try:
-            params = {
-                "query": query,
-                "language": "en-US",
-                "page": page,
-                "include_adult": False
+            locations = await self.extract_film_locations(movie_data)
+
+            # Extract credits if available
+            credits = movie_data.get("credits", {})
+            director = self._extract_director(credits)
+            cast = self._extract_cast(credits)
+
+            # Extract genres
+            genres = []
+            for genre in movie_data.get("genres", []):
+                if isinstance(genre, dict):
+                    genres.append(genre.get("name", ""))
+                else:
+                    genres.append(str(genre))
+
+            # Extract production countries
+            production_countries = []
+            for country in movie_data.get("production_countries", []):
+                if isinstance(country, dict):
+                    production_countries.append(country.get("name", ""))
+
+            # Extract spoken languages
+            spoken_languages = []
+            for lang in movie_data.get("spoken_languages", []):
+                if isinstance(lang, dict):
+                    spoken_languages.append(lang.get("name", ""))
+
+            return {
+                "film_id": movie_data.get("id"),
+                "title": movie_data.get("title"),
+                "original_title": movie_data.get("original_title"),
+                "release_date": movie_data.get("release_date"),
+                "overview": movie_data.get("overview", "")[:500],
+                "popularity": movie_data.get("popularity", 0),
+                "vote_average": movie_data.get("vote_average", 0),
+                "vote_count": movie_data.get("vote_count", 0),
+                "genres": genres,
+                "production_countries": production_countries,
+                "spoken_languages": spoken_languages,
+                "runtime": movie_data.get("runtime"),
+                "budget": movie_data.get("budget"),
+                "revenue": movie_data.get("revenue"),
+                "original_language": movie_data.get("original_language"),
+                "poster_path": movie_data.get("poster_path"),
+                "backdrop_path": movie_data.get("backdrop_path"),
+                "adult": movie_data.get("adult", False),
+                "video": movie_data.get("video", False),
+                "locations": locations,
+                "director": director,
+                "cast": cast,
+                "tmdb_data": {
+                    "id": movie_data.get("id"),
+                    "imdb_id": movie_data.get("imdb_id"),
+                    "homepage": movie_data.get("homepage"),
+                    "status": movie_data.get("status"),
+                    "tagline": movie_data.get("tagline")
+                },
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
             }
-            if year:
-                params["year"] = year
-
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/search/movie",
-                    headers=self.headers,
-                    params=params
-                )
-                response.raise_for_status()
-                return response.json()
-
-        except httpx.RequestError as e:
-            logger.error(f"Request error searching movies: {e}")
-            raise
         except Exception as e:
-            logger.error(f"Error searching movies: {e}")
-            raise
+            logger.error(f"Error transforming movie data: {e}")
+            # Vrati barem osnovne podatke
+            return {
+                "film_id": movie_data.get("id"),
+                "title": movie_data.get("title", "Unknown"),
+                "release_date": movie_data.get("release_date"),
+                "overview": movie_data.get("overview", "")[:500],
+                "created_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }
 
-    async def get_movie_locations(self, movie_id: int) -> List[Dict]:
-        """Dohvata lokacije snimanja filma (ako su dostupne)"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/movie/{movie_id}/watch/providers",
-                    headers=self.headers
-                )
-                response.raise_for_status()
-                data = response.json()
+    def _extract_director(self, credits_data: Dict[str, Any]) -> str:
+        """Extract director from credits"""
+        if not credits_data:
+            return "Unknown"
 
-                # Note: TMDB doesn't have direct location data
-                # This is a placeholder for future integration
-                return []
+        crew = credits_data.get("crew", [])
+        for person in crew:
+            if person.get("job") == "Director":
+                return person.get("name", "Unknown")
+        return "Unknown"
 
-        except Exception as e:
-            logger.warning(f"Could not fetch locations for movie {movie_id}: {e}")
+    def _extract_cast(self, credits_data: Dict[str, Any]) -> List[str]:
+        """Extract top 5 cast members"""
+        if not credits_data:
             return []
 
-    async def get_movie_keywords(self, movie_id: int) -> List[str]:
-        """Dohvata ključne riječi za film"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/movie/{movie_id}/keywords",
-                    headers=self.headers
-                )
-                response.raise_for_status()
-                data = response.json()
+        cast = credits_data.get("cast", [])
+        return [person.get("name", "") for person in cast[:5] if person.get("name")]
 
-                return [keyword["name"] for keyword in data.get("keywords", [])]
+    async def test_connection(self) -> bool:
+        """Testira konekciju sa TMDB API"""
+        try:
+            url = f"{self.base_url}/configuration"
+            params = {"api_key": self.api_key}
+
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, params=params)
+
+                if response.status_code == 200:
+                    logger.info("✓ TMDB API connection successful")
+                    return True
+                else:
+                    logger.error(f"✗ TMDB API connection failed: {response.status_code}")
+                    return False
 
         except Exception as e:
-            logger.warning(f"Could not fetch keywords for movie {movie_id}: {e}")
-            return []
+            logger.error(f"✗ TMDB API connection error: {e}")
+            return False
 
-    async def get_movie_recommendations(self, movie_id: int, limit: int = 5) -> List[Dict]:
-        """Dohvata preporučene filmove"""
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    f"{self.base_url}/movie/{movie_id}/recommendations",
-                    headers=self.headers,
-                    params={"language": "en-US", "page": 1}
-                )
-                response.raise_for_status()
-                data = response.json()
 
-                return data.get("results", [])[:limit]
-
-        except Exception as e:
-            logger.warning(f"Could not fetch recommendations for movie {movie_id}: {e}")
-            return []
+# Singleton instance
+tmdb_service = TMDBService()

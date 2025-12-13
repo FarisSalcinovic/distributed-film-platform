@@ -8,12 +8,13 @@ from sqlalchemy import or_
 from pydantic import BaseModel, EmailStr, Field, validator
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import logging
+import logging  # OVO JE PRAVILNI IMPORT
 import sys
 import os
 import uuid
 from typing import Optional
 
+from .api.endpoints import etl_status
 from .dependencies.auth import require_admin, get_current_user
 
 # Dodajemo putanju da bi mogli importovati app module
@@ -24,9 +25,9 @@ from .db import get_db, create_all_tables, connect_to_mongo, close_mongo_connect
 from .models.user import User
 from .services.auth import get_password_hash, verify_password, create_access_token, create_refresh_token
 
-# Setup logging
+# Setup logging - OVO JE PRAVILNI NAČIN
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)  # OVO KREIRA LOGGER
 
 # Učitavanje varijabli okoline
 load_dotenv()
@@ -57,6 +58,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
+app.include_router(etl_status.router)
 
 
 # ----------------------------------------------------------------------
@@ -302,11 +304,15 @@ async def get_current_user(
 
 
 # ----------------------------------------------------------------------
-## LIFESPAN HANDLERI (Startup i Shutdown)
+## LIFESPAN HANDLERI (Startup i Shutdown) - MODERNI NAČIN
 # ----------------------------------------------------------------------
-@app.on_event("startup")
-async def startup_events():
-    """Handler koji se izvršava pri pokretanju aplikacije."""
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Modern lifespan handler za FastAPI 2.0+"""
+    # Startup
     logger.info("=" * 60)
     logger.info("Starting up Film Data Platform API")
     logger.info("=" * 60)
@@ -329,29 +335,77 @@ async def startup_events():
     # 3. Uključi auth router
     app.include_router(auth_router, prefix="/api/v1")
     logger.info("✓ Auth router included at /api/v1/auth")
-    logger.info("✓ Available auth endpoints:")
-    logger.info("  - POST /api/v1/auth/register")
-    logger.info("  - POST /api/v1/auth/login")
-    logger.info("  - POST /api/v1/auth/refresh")
-    logger.info("  - POST /api/v1/auth/logout")
-    logger.info("  - GET  /api/v1/auth/me")
+
+    # 4. Uključi ETL router
+    try:
+        from .api.v1 import etl as etl_router
+        app.include_router(etl_router.router, prefix="/api/v1")
+        logger.info("✓ ETL router included at /api/v1/etl")
+        logger.info("✓ Available ETL endpoints:")
+        logger.info("  - POST /api/v1/etl/run-tmdb-etl")
+        logger.info("  - POST /api/v1/etl/run-geodb-etl")
+        logger.info("  - POST /api/v1/etl/run-enrichment")
+        logger.info("  - POST /api/v1/etl/run-full-etl")
+        logger.info("  - GET  /api/v1/etl/task-status/{task_id}")
+        logger.info("  - GET  /api/v1/etl/jobs/latest")
+    except ImportError as e:
+        logger.warning(f"✗ ETL router not available: {e}")
 
     logger.info("=" * 60)
     logger.info("Application startup complete!")
     logger.info("=" * 60)
 
+    # U main.py (u lifespan handleru ili kod include_routers)
+    try:
+        from .api.v1 import film_locations as film_locations_router
+        app.include_router(film_locations_router.router, prefix="/api/v1")
+        logger.info("✓ Analytics router included at /api/v1")
+        logger.info("✓ Available analytics endpoints:")
+        logger.info("  - GET /api/v1/films/locations")
+        logger.info("  - GET /api/v1/films/trending")
+        logger.info("  - GET /api/v1/cities/popular")
+        logger.info("  - GET /api/v1/analytics/films-by-country")
+        logger.info("  - GET /api/v1/analytics/cities-near-films")
+        logger.info("  - GET /api/v1/analytics/stats")
+    except ImportError as e:
+        logger.warning(f"✗ Analytics router not available: {e}")
 
-@app.on_event("shutdown")
-async def shutdown_events():
-    """Handler koji se izvršava prilikom gašenja aplikacije."""
+    yield  # Aplikacija radi ovde
+
+    # Shutdown
     logger.info("Shutting down Film Data Platform...")
-
-    # Zatvaranje MongoDB konekcije
     try:
         await close_mongo_connection()
         logger.info("✓ MongoDB connection closed")
     except Exception as e:
         logger.error(f"✗ Error closing MongoDB connection: {e}")
+
+
+# Kreiraj aplikaciju sa lifespan handlerom
+app = FastAPI(
+    title="Distributed Film Platform API",
+    description="REST API for film data aggregation and analysis",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    lifespan=lifespan  # DODAJ OVO
+)
+
+# Ponovi CORS middleware jer smo kreirali novu app
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",  # React frontend
+        "http://localhost:8000",  # FastAPI itself
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000",
+        "http://localhost:5173",  # Vite dev server
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["*"],
+)
 
 
 # ----------------------------------------------------------------------
@@ -500,3 +554,17 @@ async def admin_get_users(
             for user in users
         ]
     }
+
+
+
+@app.get("/")
+async def root():
+    return {"message": "Film Location ETL Platform API"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+@app.get("/test")
+async def test():
+    return {"message": "API is working"}

@@ -6,32 +6,29 @@ import uuid
 
 
 class FilmLocation(BaseModel):
-    id: str
-    film_id: int  # TMDB ID
-    location_name: str
-    city_id: str  # GeoDB city ID
-    country_code: str
-    latitude: float
-    longitude: float
-    scene_description: Optional[str] = None
+    """Film location data from TMDB API"""
+    film_id: int
+    title: str
+    release_date: Optional[str]
+    locations: List[str]  # List of filming locations
+    popularity: float
+    vote_average: float
+    genres: List[str]
+    tmdb_data: dict  # Raw TMDB data
+    created_at: datetime = datetime.utcnow()
+    updated_at: datetime = datetime.utcnow()
 
 
 class FilmData(BaseModel):
-    id: str = str(uuid.uuid4())
-    tmdb_id: int
-    title: str
-    original_title: str
-    overview: Optional[str] = None
-    release_date: Optional[str] = None
-    runtime: Optional[int] = None
-    budget: Optional[int] = None
-    revenue: Optional[int] = None
-    popularity: float
-    vote_average: float
-    vote_count: int
-    genres: List[str] = []
-    production_countries: List[str] = []
-    spoken_languages: List[str] = []
-    locations: List[FilmLocation] = []
+    """City data from GEO API"""
+    city_id: int
+    name: str
+    country: str
+    region: str
+    latitude: float
+    longitude: float
+    population: Optional[int]
+    elevation: Optional[int]
+    timezone: str
+    geo_data: dict  # Raw GEO data
     created_at: datetime = datetime.utcnow()
-    updated_at: datetime = datetime.utcnow()
