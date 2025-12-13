@@ -1,7 +1,7 @@
-// frontend/src/components/ETLDashboard.js
+// frontend/src/components/ETLDashboard.js - FINALNA VERZIJA
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import api from '../services/api';
+import { etlAPI, analyticsAPI } from '../services/etlApi';
 import './ETLDashboard.css';
 
 const ETLDashboard = () => {
@@ -12,114 +12,155 @@ const ETLDashboard = () => {
   const [error, setError] = useState('');
   const [runningETL, setRunningETL] = useState(false);
   const [refreshTime, setRefreshTime] = useState(30);
+  const [latestJobs, setLatestJobs] = useState([]);
 
-  // Fetch ETL status data
-  const fetchETLData = async () => {
+  // Testiranje endpointa prije pokretanja
+  const testEndpointsBeforeRunning = async () => {
+    console.log('Testing ETL endpoints before running...');
+
     try {
-      // Pokusaj prvo sa /api/v1/etl/status
-      const statusResponse = await api.get('/api/v1/etl/status');
-      setEtlStatus(statusResponse.data);
+      // Testiraj osnovne endpointove
+      const statusResponse = await etlAPI.getStatus();
+      console.log('✅ ETL Status endpoint works:', statusResponse.status);
 
-      // Pokusaj sa correlation stats
-      try {
-        const corrResponse = await api.get('/api/v1/etl/correlation-stats');
-        setCorrelationData(corrResponse.data);
-      } catch (corrErr) {
-        console.log('Correlation endpoint not available:', corrErr.message);
-      }
+      const testResponse = await etlAPI.testETLEndpoint();
+      console.log('✅ ETL Test endpoint works:', testResponse.message);
 
+      return true;
+    } catch (error) {
+      console.error('❌ Endpoint test failed:', error.response?.status || error.message);
+
+      alert(
+        `API endpoints not found!\n\n` +
+        `Please check:\n` +
+        `1. Backend is running: http://localhost:8000\n` +
+        `2. Check backend logs for errors\n\n` +
+        `Error: ${error.response?.status || error.message}`
+      );
+
+      return false;
+    }
+  };
+
+  // Fetch all ETL data
+  const fetchETLData = async () => {
+    setLoading(true);
+    try {
+      const [statusData, jobsData] = await Promise.all([
+        etlAPI.getStatus(),
+        etlAPI.getLatestJobs(5)
+      ]);
+
+      setEtlStatus(statusData);
+      setLatestJobs(jobsData.jobs || []);
       setError('');
     } catch (err) {
       console.error('Error fetching ETL data:', err);
-
-      // Ako endpoint ne postoji, koristi fallback podatke
-      if (err.response?.status === 404) {
-        setError('ETL endpoints not found. The backend might not have ETL endpoints implemented.');
-        // Prikazi demo podatke
-        setEtlStatus({
-          status: 'demo',
-          timestamp: new Date().toISOString(),
-          collection_stats: {
-            films: 125,
-            places: 89,
-            cities: 42,
-            etl_jobs: 15,
-            film_place_correlations: 67
-          },
-          last_jobs: [
-            {
-              job_id: 'demo-001',
-              job_type: 'tmdb',
-              status: 'completed',
-              started_at: new Date(Date.now() - 3600000).toISOString(),
-              completed_at: new Date().toISOString(),
-              results: { processed: 20, errors: 0 }
-            }
-          ]
-        });
-      } else {
-        setError(`Failed to load ETL data: ${err.message}`);
-      }
+      setError(`Failed to load ETL data: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Run ETL pipeline
-  const runETLPipeline = async () => {
-    if (!window.confirm('Are you sure you want to run the ETL pipeline? This may take several minutes.')) {
+  // Run TMDB ETL
+  const runTMDBETL = async () => {
+    try {
+      // Testiraj endpoint prije nego što pokreneš
+      const endpointsWorking = await testEndpointsBeforeRunning();
+      if (!endpointsWorking) {
+        return;
+      }
+
+      setRunningETL(true);
+      const response = await etlAPI.runTMDBETL(2, 10);
+      alert(`🎬 TMDB ETL started!\n${response.message}`);
+
+      // Start countdown and refresh
+      startCountdown();
+    } catch (err) {
+      console.error('Error running TMDB ETL:', err);
+      alert(`Failed to run TMDB ETL: ${err.response?.data?.detail || err.message}`);
+      setRunningETL(false);
+    }
+  };
+
+  // Run Places ETL
+  const runPlacesETL = async () => {
+    try {
+      setRunningETL(true);
+      const response = await etlAPI.runPlacesETL(['US', 'GB', 'FR'], 10);
+      alert(`📍 Places ETL started!\n${response.message}`);
+
+      startCountdown();
+    } catch (err) {
+      console.error('Error running Places ETL:', err);
+      alert(`Failed to run Places ETL: ${err.response?.data?.detail || err.message}`);
+      setRunningETL(false);
+    }
+  };
+
+  // Run Full ETL
+  const runFullETL = async () => {
+    if (!window.confirm('Are you sure you want to run the full ETL pipeline? This may take several minutes.')) {
       return;
     }
 
     setRunningETL(true);
     try {
-      // Prvo probaj sa /api/v1/etl/run-combined
-      let response;
-      try {
-        response = await api.post('/api/v1/etl/run-combined');
-      } catch (err) {
-        // Ako ne postoji, probaj sa drugim endpointom
-        response = await api.post('/api/v1/etl/run-tmdb', {
-          pages: 1,
-          movies_per_page: 10
-        });
-      }
+      const response = await etlAPI.runFullETL();
+      alert(`🚀 Full ETL pipeline started!\n${response.message}`);
 
-      alert(`✅ ETL pipeline started!\nTask ID: ${response.data.task_id || response.data.job_id}`);
-
-      // Countdown timer za refresh
-      let countdown = 30;
-      const countdownInterval = setInterval(() => {
-        setRefreshTime(countdown);
-        countdown--;
-
-        if (countdown <= 0) {
-          clearInterval(countdownInterval);
-          fetchETLData();
-          setRunningETL(false);
-          setRefreshTime(30);
-        }
-      }, 1000);
-
+      startCountdown();
     } catch (err) {
-      alert('❌ Failed to run ETL pipeline. Please check console for details.');
-      console.error('ETL error:', err);
+      console.error('Error running Full ETL:', err);
+      alert(`❌ Failed to run ETL pipeline: ${err.response?.data?.detail || err.message}`);
       setRunningETL(false);
     }
   };
 
-  // Run specific TMDB ETL
-  const runTMDBETL = async () => {
+  // Run Enrichment
+  const runEnrichment = async () => {
     try {
-      const response = await api.post('/api/v1/etl/run-tmdb', {
-        pages: 1,
-        movies_per_page: 5
-      });
-      alert(`🎬 TMDB ETL started!\nTask ID: ${response.data.task_id}`);
-      setTimeout(fetchETLData, 20000);
+      setRunningETL(true);
+      const response = await etlAPI.runEnrichmentETL();
+      alert(`🔗 Enrichment ETL started!\n${response.message}`);
+
+      startCountdown();
     } catch (err) {
-      alert('Failed to run TMDB ETL');
+      console.error('Error running Enrichment ETL:', err);
+      alert(`Failed to run Enrichment ETL: ${err.response?.data?.detail || err.message}`);
+      setRunningETL(false);
     }
+  };
+
+  // Test API Connections
+  const testAPIConnections = async () => {
+    try {
+      setRunningETL(true);
+      const response = await etlAPI.testAPIConnections();
+      alert(`✅ API connections tested!\nStatus: ${response.message}`);
+      setRunningETL(false);
+    } catch (err) {
+      console.error('Error testing API connections:', err);
+      alert(`Failed to test API connections: ${err.message}`);
+      setRunningETL(false);
+    }
+  };
+
+  // Countdown timer
+  const startCountdown = () => {
+    let countdown = 30;
+    const countdownInterval = setInterval(() => {
+      setRefreshTime(countdown);
+      countdown--;
+
+      if (countdown <= 0) {
+        clearInterval(countdownInterval);
+        fetchETLData();
+        setRunningETL(false);
+        setRefreshTime(30);
+      }
+    }, 1000);
   };
 
   // Refresh button handler
@@ -130,26 +171,30 @@ const ETLDashboard = () => {
   useEffect(() => {
     fetchETLData();
 
-    // Auto-refresh svakih 60 sekundi
+    // Auto-refresh every 60 seconds
     const interval = setInterval(fetchETLData, 60000);
     return () => clearInterval(interval);
   }, []);
 
-  // Formatiranje datuma
+  // Format date
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString();
+    try {
+      return new Date(dateString).toLocaleString();
+    } catch (e) {
+      return dateString;
+    }
   };
 
-  // Priprema podataka za grafikon
+  // Prepare chart data
   const prepareChartData = () => {
     if (!etlStatus) return [];
-    const stats = etlStatus.collection_stats || {};
+    // Koristi podatke iz status endpointa
     return [
-      { name: 'Movies', value: stats.films || 0, color: '#8884d8' },
-      { name: 'Places', value: stats.places || 0, color: '#82ca9d' },
-      { name: 'Cities', value: stats.cities || 0, color: '#ffc658' },
-      { name: 'Correlations', value: stats.film_place_correlations || 0, color: '#ff8042' }
+      { name: 'API Status', value: etlStatus.status === 'active' ? 100 : 0, color: '#8884d8' },
+      { name: 'TMDB API', value: etlStatus.apis_configured?.tmdb ? 100 : 0, color: '#82ca9d' },
+      { name: 'Geoapify API', value: etlStatus.apis_configured?.geoapify ? 100 : 0, color: '#ffc658' },
+      { name: 'Celery', value: etlStatus.celery_available ? 100 : 0, color: '#ff8042' }
     ];
   };
 
@@ -173,7 +218,7 @@ const ETLDashboard = () => {
             <h1>🚀 ETL Dashboard</h1>
             <p className="lead">Real-time monitoring of Film & Location data pipeline</p>
             {etlStatus && (
-              <span className={`status-badge ${etlStatus.status === 'ok' ? 'status-ok' : 'status-warning'}`}>
+              <span className={`status-badge ${etlStatus.status === 'active' ? 'status-ok' : 'status-warning'}`}>
                 Status: {etlStatus.status}
               </span>
             )}
@@ -188,7 +233,7 @@ const ETLDashboard = () => {
             </button>
             <button
               className="btn btn-primary"
-              onClick={runETLPipeline}
+              onClick={runFullETL}
               disabled={runningETL}
             >
               {runningETL ? (
@@ -196,7 +241,7 @@ const ETLDashboard = () => {
                   <span className="spinner-small"></span>
                   Running ({refreshTime}s)
                 </>
-              ) : '🚀 Run ETL Pipeline'}
+              ) : '🚀 Run Full ETL'}
             </button>
           </div>
         </div>
@@ -213,36 +258,36 @@ const ETLDashboard = () => {
           <div className="stat-card">
             <div className="stat-icon">🎬</div>
             <div className="stat-content">
-              <h3>{etlStatus?.collection_stats?.films || 0}</h3>
-              <p>Movies</p>
-              <small>From TMDB API</small>
+              <h3>{etlStatus?.apis_configured?.tmdb ? '✅' : '❌'}</h3>
+              <p>TMDB API</p>
+              <small>{etlStatus?.apis_configured?.tmdb ? 'Configured' : 'Not configured'}</small>
             </div>
           </div>
 
           <div className="stat-card">
             <div className="stat-icon">📍</div>
             <div className="stat-content">
-              <h3>{etlStatus?.collection_stats?.places || 0}</h3>
-              <p>Places</p>
-              <small>From Geoapify API</small>
+              <h3>{etlStatus?.apis_configured?.geoapify ? '✅' : '❌'}</h3>
+              <p>Geoapify API</p>
+              <small>{etlStatus?.apis_configured?.geoapify ? 'Configured' : 'Not configured'}</small>
             </div>
           </div>
 
           <div className="stat-card">
-            <div className="stat-icon">🔗</div>
+            <div className="stat-icon">⚡</div>
             <div className="stat-content">
-              <h3>{etlStatus?.collection_stats?.film_place_correlations || 0}</h3>
-              <p>Correlations</p>
-              <small>Film-Location matches</small>
+              <h3>{etlStatus?.celery_available ? '✅' : '❌'}</h3>
+              <p>Celery Worker</p>
+              <small>{etlStatus?.celery_available ? 'Running' : 'Not available'}</small>
             </div>
           </div>
 
           <div className="stat-card">
             <div className="stat-icon">🔄</div>
             <div className="stat-content">
-              <h3>{etlStatus?.collection_stats?.etl_jobs || 0}</h3>
-              <p>ETL Jobs</p>
-              <small>Completed runs</small>
+              <h3>{latestJobs.length}</h3>
+              <p>Recent Jobs</p>
+              <small>Last 5 jobs</small>
             </div>
           </div>
         </div>
@@ -253,7 +298,7 @@ const ETLDashboard = () => {
           <div className="content-column">
             <div className="card">
               <div className="card-header">
-                <h3>📊 Data Distribution</h3>
+                <h3>📊 System Status</h3>
               </div>
               <div className="card-body">
                 <div className="chart-container">
@@ -261,13 +306,13 @@ const ETLDashboard = () => {
                     <div key={index} className="chart-bar">
                       <div className="bar-label">
                         <span className="bar-name">{item.name}</span>
-                        <span className="bar-value">{item.value}</span>
+                        <span className="bar-value">{item.value}%</span>
                       </div>
                       <div className="bar-track">
                         <div
                           className="bar-fill"
                           style={{
-                            width: `${(item.value / Math.max(...chartData.map(d => d.value))) * 100}%`,
+                            width: `${item.value}%`,
                             backgroundColor: item.color
                           }}
                         ></div>
@@ -275,121 +320,6 @@ const ETLDashboard = () => {
                     </div>
                   ))}
                 </div>
-              </div>
-            </div>
-
-            {/* Correlation Stats */}
-            {correlationData && correlationData.status === 'success' && (
-              <div className="card">
-                <div className="card-header">
-                  <h3>🔗 Correlation Stats</h3>
-                </div>
-                <div className="card-body">
-                  <div className="correlation-stats">
-                    <div className="stat-number">
-                      {correlationData.total_correlations || 0}
-                      <span>Total Correlations</span>
-                    </div>
-
-                    {correlationData.sample_correlations && correlationData.sample_correlations.length > 0 && (
-                      <div className="sample-correlations">
-                        <h4>Sample Correlations:</h4>
-                        {correlationData.sample_correlations.slice(0, 3).map((corr, idx) => (
-                          <div key={idx} className="correlation-item">
-                            <div className="film">{corr.film_title}</div>
-                            <div className="arrow">→</div>
-                            <div className="location">
-                              📍 {corr.place_city}, {corr.place_country}
-                            </div>
-                            <div className="score">
-                              {Math.round((corr.match_score || 0.5) * 100)}%
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right Column - Controls and Jobs */}
-          <div className="content-column">
-            {/* ETL Controls */}
-            <div className="card">
-              <div className="card-header">
-                <h3>⚡ ETL Controls</h3>
-              </div>
-              <div className="card-body">
-                <div className="etl-controls">
-                  <div className="control-group">
-                    <h4>🎬 TMDB ETL</h4>
-                    <p>Fetch movies from TMDB database</p>
-                    <button className="btn btn-outline-primary" onClick={runTMDBETL}>
-                      Run TMDB ETL
-                    </button>
-                  </div>
-
-                  <div className="control-group">
-                    <h4>📍 Geoapify ETL</h4>
-                    <p>Fetch places and locations</p>
-                    <button className="btn btn-outline-success" disabled>
-                      Run Geoapify ETL
-                    </button>
-                  </div>
-
-                  <div className="control-group">
-                    <h4>🔗 Correlation</h4>
-                    <p>Create film-location correlations</p>
-                    <button className="btn btn-outline-warning" onClick={runETLPipeline}>
-                      Run Correlation
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Recent Jobs */}
-            <div className="card">
-              <div className="card-header">
-                <h3>📋 Recent ETL Jobs</h3>
-              </div>
-              <div className="card-body">
-                {etlStatus?.last_jobs && etlStatus.last_jobs.length > 0 ? (
-                  <div className="jobs-list">
-                    {etlStatus.last_jobs.slice(0, 5).map((job, index) => (
-                      <div key={index} className="job-item">
-                        <div className="job-header">
-                          <span className="job-type">{job.job_type}</span>
-                          <span className={`job-status ${job.status}`}>
-                            {job.status}
-                          </span>
-                        </div>
-                        <div className="job-details">
-                          <div className="job-time">
-                            <span>Started: {formatDate(job.started_at)}</span>
-                            {job.completed_at && (
-                              <span>Completed: {formatDate(job.completed_at)}</span>
-                            )}
-                          </div>
-                          {job.results && (
-                            <div className="job-results">
-                              Processed: {job.results.processed || 0} items
-                              {job.results.error_count > 0 && (
-                                <span className="errors"> ({job.results.error_count} errors)</span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="empty-state">
-                    <p>No ETL jobs found. Run an ETL pipeline to see job history.</p>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -417,6 +347,106 @@ const ETLDashboard = () => {
                     <span className="info-value">MongoDB</span>
                   </div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column - Controls and Jobs */}
+          <div className="content-column">
+            {/* ETL Controls */}
+            <div className="card">
+              <div className="card-header">
+                <h3>⚡ ETL Controls</h3>
+              </div>
+              <div className="card-body">
+                <div className="etl-controls">
+                  <div className="control-group">
+                    <h4>🎬 TMDB ETL</h4>
+                    <p>Fetch movies from TMDB database</p>
+                    <button className="btn btn-outline-primary" onClick={runTMDBETL} disabled={runningETL}>
+                      Run TMDB ETL
+                    </button>
+                  </div>
+
+                  <div className="control-group">
+                    <h4>📍 Places ETL</h4>
+                    <p>Fetch places from Geoapify</p>
+                    <button className="btn btn-outline-success" onClick={runPlacesETL} disabled={runningETL}>
+                      Run Places ETL
+                    </button>
+                  </div>
+
+                  <div className="control-group">
+                    <h4>🔗 Enrichment</h4>
+                    <p>Create film-location correlations</p>
+                    <button className="btn btn-outline-warning" onClick={runEnrichment} disabled={runningETL}>
+                      Run Enrichment
+                    </button>
+                  </div>
+
+                  <div className="control-group">
+                    <h4>🔌 Test APIs</h4>
+                    <p>Test API connections</p>
+                    <button className="btn btn-outline-info" onClick={testAPIConnections} disabled={runningETL}>
+                      Test Connections
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Recent Jobs */}
+            <div className="card">
+              <div className="card-header">
+                <h3>📋 Recent ETL Jobs</h3>
+              </div>
+              <div className="card-body">
+                {latestJobs.length > 0 ? (
+                  <div className="jobs-list">
+                    {latestJobs.map((job, index) => (
+                      <div key={index} className="job-item">
+                        <div className="job-header">
+                          <span className="job-type">{job.job_type}</span>
+                          <span className={`job-status ${job.status}`}>
+                            {job.status}
+                          </span>
+                        </div>
+                        <div className="job-details">
+                          <div className="job-time">
+                            <span>Started: {formatDate(job.started_at)}</span>
+                            {job.completed_at && (
+                              <span>Completed: {formatDate(job.completed_at)}</span>
+                            )}
+                          </div>
+                          {job.results && (
+                            <div className="job-results">
+                              {job.job_type === 'tmdb' ? (
+                                <>
+                                  Movies: {job.results.processed || 0}
+                                  {job.results.error_count > 0 && (
+                                    <span className="errors"> ({job.results.error_count} errors)</span>
+                                  )}
+                                </>
+                              ) : job.job_type === 'geoapify_places' ? (
+                                <>
+                                  Places: {job.results.total_processed || 0}
+                                </>
+                              ) : (
+                                <>
+                                  Processed: {job.results.processed || 0} items
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="empty-state">
+                    <p>No ETL jobs found. Run an ETL pipeline to see job history.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

@@ -1,4 +1,4 @@
-# backend/app/api/v1/etl.py
+# backend/app/api/v1/etl.py - ISPRAVLJENO
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Body
 from typing import Dict, Any, List
 import logging
@@ -8,8 +8,8 @@ from datetime import datetime
 try:
     from ...tasks.etl_tasks import (
         fetch_and_store_films,
-        fetch_and_store_places,  # PROMENJENO: cities → places
-        enrich_films_with_places,  # PROMENJENO: locations → places
+        fetch_and_store_places,
+        enrich_films_with_places,
         run_combined_etl,
         test_api_connections,
         cleanup_old_data,
@@ -22,7 +22,8 @@ except ImportError:
     logger = logging.getLogger(__name__)
     logger.warning("Celery tasks not available, using mock functions")
 
-router = APIRouter()
+# DODAJ PREFIX I TAGS OVDE!
+router = APIRouter(prefix="/etl", tags=["ETL Operations"])
 logger = logging.getLogger(__name__)
 
 
@@ -37,7 +38,7 @@ async def mock_etl_task(task_name: str, **kwargs):
     }
 
 
-@router.post("/run-tmdb-etl", tags=["ETL Operations"])
+@router.post("/run-tmdb-etl")
 async def run_tmdb_etl(
         pages: int = 3,
         movies_per_page: int = 20,
@@ -90,7 +91,7 @@ async def run_tmdb_etl(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/run-places-etl", tags=["ETL Operations"])  # PROMENJENO: geodb → places
+@router.post("/run-places-etl")
 async def run_places_etl(
         country_codes: List[str] = Body(["US", "GB", "FR"], description="Country codes to fetch"),
         limit_per_country: int = Body(20, description="Places per country"),
@@ -143,7 +144,7 @@ async def run_places_etl(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/run-enrichment", tags=["ETL Operations"])
+@router.post("/run-enrichment")
 async def run_enrichment_etl(
         background_tasks: BackgroundTasks = None
 ):
@@ -179,7 +180,7 @@ async def run_enrichment_etl(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/run-full-etl", tags=["ETL Operations"])
+@router.post("/run-full-etl")
 async def run_full_etl(
         background_tasks: BackgroundTasks = None
 ):
@@ -215,7 +216,7 @@ async def run_full_etl(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/test-api-connections", tags=["ETL Operations"])
+@router.post("/test-api-connections")
 async def trigger_api_test(
         background_tasks: BackgroundTasks = None
 ):
@@ -251,7 +252,7 @@ async def trigger_api_test(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/cleanup-old-data", tags=["ETL Operations"])
+@router.post("/cleanup-old-data")
 async def trigger_cleanup(
         days_old: int = 30,
         background_tasks: BackgroundTasks = None
@@ -294,7 +295,7 @@ async def trigger_cleanup(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/generate-report", tags=["ETL Operations"])
+@router.post("/generate-report")
 async def trigger_report_generation(
         background_tasks: BackgroundTasks = None
 ):
@@ -330,7 +331,7 @@ async def trigger_report_generation(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/task-status/{task_id}", tags=["ETL Operations"])
+@router.get("/task-status/{task_id}")
 async def get_task_status(task_id: str):
     """
     Proverava status Celery task-a
@@ -368,7 +369,7 @@ async def get_task_status(task_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/jobs/latest", tags=["ETL Operations"])
+@router.get("/jobs/latest")
 async def get_latest_jobs(limit: int = 10):
     """
     Vraća poslednje ETL job-ove iz baze
@@ -393,7 +394,7 @@ async def get_latest_jobs(limit: int = 10):
                     },
                     {
                         "job_id": "mock-job-2",
-                        "job_type": "geoapify_places",  # PROMENJENO
+                        "job_type": "geoapify_places",
                         "status": "completed",
                         "started_at": datetime.utcnow().isoformat(),
                         "completed_at": datetime.utcnow().isoformat(),
@@ -417,7 +418,6 @@ async def get_latest_jobs(limit: int = 10):
 
     except Exception as e:
         logger.error(f"Greška pri dohvatanju job-ova: {str(e)}")
-        # Vrati prazan response umesto da baci grešku
         return {
             "total_jobs": 0,
             "jobs": [],
@@ -425,7 +425,7 @@ async def get_latest_jobs(limit: int = 10):
         }
 
 
-@router.get("/collections/stats", tags=["ETL Operations"])
+@router.get("/collections/stats")
 async def get_collections_stats():
     """
     Vraća statistiku svih kolekcija u bazi
@@ -451,7 +451,7 @@ async def get_collections_stats():
                 count = db[collection_name].count_documents({})
                 stats[collection_name] = {
                     "count": count,
-                    "estimated_size_mb": 0  # Možeš dodati izračun veličine ako želiš
+                    "estimated_size_mb": 0
                 }
             except Exception as e:
                 stats[collection_name] = {
@@ -471,7 +471,7 @@ async def get_collections_stats():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/test", tags=["ETL Operations"])
+@router.get("/test")
 async def test_etl_endpoint():
     """Test endpoint za ETL - ne zahtijeva admin"""
     return {
@@ -497,11 +497,10 @@ async def test_etl_endpoint():
     }
 
 
-@router.get("/status", tags=["ETL Operations"])
+@router.get("/status")
 async def get_etl_system_status():
     """Vraća status ETL sistema"""
     try:
-        # Proveri da li su svi servisi dostupni
         from ...services.etl.tmdb_service import tmdb_service
         from ...services.etl.geoapify_service import geoapify_service
 
@@ -531,4 +530,61 @@ async def get_etl_system_status():
             "status": "partially_available",
             "error": str(e),
             "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+@router.get("/correlation-stats")
+async def get_correlation_stats():
+    """
+    Vraća statistiku korelacija između filmova i mesta
+    """
+    try:
+        from ...db import get_mongo_client
+        from ...config import settings
+
+        client = get_mongo_client()
+        if not client:
+            return {
+                "status": "no_data",
+                "message": "MongoDB not available",
+                "total_correlations": 0,
+                "sample_correlations": []
+            }
+
+        db = client[settings.MONGO_DB]
+
+        # Proveri da li postoji kolekcija
+        if "film_place_correlations" not in db.list_collection_names():
+            return {
+                "status": "no_data",
+                "message": "No correlation data yet",
+                "total_correlations": 0,
+                "sample_correlations": []
+            }
+
+        correlations_collection = db["film_place_correlations"]
+
+        # Broj ukupnih korelacija
+        total_correlations = correlations_collection.count_documents({})
+
+        # Uzmi uzorak za prikaz
+        sample_correlations = list(correlations_collection.find(
+            {},
+            {"_id": 0, "film_title": 1, "place_city": 1, "place_country": 1, "match_score": 1}
+        ).limit(5))
+
+        return {
+            "status": "success",
+            "total_correlations": total_correlations,
+            "sample_correlations": sample_correlations,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        logger.error(f"Greška pri dohvatanju statistike korelacija: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "total_correlations": 0,
+            "sample_correlations": []
         }

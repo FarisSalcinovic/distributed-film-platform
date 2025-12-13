@@ -3,7 +3,7 @@ import axios from 'axios';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: 'http://localhost:8000',  // BEZ /api/v1
   headers: {
     'Content-Type': 'application/json',
   },
@@ -18,10 +18,9 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
+
 
 export const authAPI = {
   // Registracija

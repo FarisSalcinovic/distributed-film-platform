@@ -1,4 +1,4 @@
-# backend/app/main.py
+# backend/app/main.py - KOMPLETNO ISPRAVLJENO
 from fastapi import FastAPI, status, Depends, HTTPException, APIRouter
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,58 +8,32 @@ from sqlalchemy import or_
 from pydantic import BaseModel, EmailStr, Field, validator
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
-import logging  # OVO JE PRAVILNI IMPORT
+import logging
 import sys
 import os
 import uuid
 from typing import Optional
+from contextlib import asynccontextmanager
+from fastapi.security import OAuth2PasswordBearer
 
+# Importi internih modula
 from .api.endpoints import etl_status
 from .dependencies.auth import require_admin, get_current_user
 
-# Dodajemo putanju da bi mogli importovati app module
+# Dodajemo putanju za importovanje app modula
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Uvozimo konekcije i modele iz internih modula
+# Uvoz konekcija i modela iz internih modula
 from .db import get_db, create_all_tables, connect_to_mongo, close_mongo_connection
 from .models.user import User
-from .services.auth import get_password_hash, verify_password, create_access_token, create_refresh_token
+from .services.auth import get_password_hash, verify_password, create_access_token, create_refresh_token, verify_token
 
-# Setup logging - OVO JE PRAVILNI NAČIN
+# Setup logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)  # OVO KREIRA LOGGER
+logger = logging.getLogger(__name__)
 
 # Učitavanje varijabli okoline
 load_dotenv()
-
-# Inicijalizacija FastAPI Aplikacije
-app = FastAPI(
-    title="Distributed Film Platform API",
-    description="REST API for film data aggregation and analysis",
-    version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc"
-)
-
-# ----------------------------------------------------------------------
-## CORS MIDDLEWARE
-# ----------------------------------------------------------------------
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # React frontend
-        "http://localhost:8000",  # FastAPI itself
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8000",
-        "http://localhost:5173",  # Vite dev server
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["*"],
-)
-app.include_router(etl_status.router)
-
 
 # ----------------------------------------------------------------------
 ## PYDANTIC MODELS ZA AUTH
@@ -212,8 +186,6 @@ async def login_user(login_data: UserLogin, db: AsyncSession = Depends(get_db)):
 @auth_router.post("/refresh", response_model=Token)
 async def refresh_token(refresh_token: str):
     """Refresh access token using refresh token"""
-    from .services.auth import verify_token
-
     payload = verify_token(refresh_token, is_refresh=True)
     if payload is None:
         raise HTTPException(
@@ -268,9 +240,6 @@ async def get_current_user_info(current_user: User = Depends(get_current_user)):
 # ----------------------------------------------------------------------
 ## DEPENDENCY ZA CURRENT USER
 # ----------------------------------------------------------------------
-from fastapi.security import OAuth2PasswordBearer
-from .services.auth import verify_token
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
@@ -304,11 +273,8 @@ async def get_current_user(
 
 
 # ----------------------------------------------------------------------
-## LIFESPAN HANDLERI (Startup i Shutdown) - MODERNI NAČIN
+## LIFESPAN HANDLER
 # ----------------------------------------------------------------------
-from contextlib import asynccontextmanager
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Modern lifespan handler za FastAPI 2.0+"""
@@ -332,30 +298,26 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"✗ Error connecting to MongoDB: {e}")
 
-    # 3. Uključi auth router
-    app.include_router(auth_router, prefix="/api/v1")
-    logger.info("✓ Auth router included at /api/v1/auth")
-
-    # 4. Uključi ETL router
+    # 3. Uključi ETL router
     try:
         from .api.v1 import etl as etl_router
         app.include_router(etl_router.router, prefix="/api/v1")
-        logger.info("✓ ETL router included at /api/v1/etl")
+        logger.info("✓ ETL router included at /api/v1")
         logger.info("✓ Available ETL endpoints:")
+        logger.info("  - GET  /api/v1/etl/status")
+        logger.info("  - GET  /api/v1/etl/test")
+        logger.info("  - GET  /api/v1/etl/correlation-stats")
+        logger.info("  - GET  /api/v1/etl/jobs/latest")
+        logger.info("  - GET  /api/v1/etl/collections/stats")
         logger.info("  - POST /api/v1/etl/run-tmdb-etl")
-        logger.info("  - POST /api/v1/etl/run-geodb-etl")
+        logger.info("  - POST /api/v1/etl/run-places-etl")
         logger.info("  - POST /api/v1/etl/run-enrichment")
         logger.info("  - POST /api/v1/etl/run-full-etl")
-        logger.info("  - GET  /api/v1/etl/task-status/{task_id}")
-        logger.info("  - GET  /api/v1/etl/jobs/latest")
+        logger.info("  - POST /api/v1/etl/test-api-connections")
     except ImportError as e:
         logger.warning(f"✗ ETL router not available: {e}")
 
-    logger.info("=" * 60)
-    logger.info("Application startup complete!")
-    logger.info("=" * 60)
-
-    # U main.py (u lifespan handleru ili kod include_routers)
+    # 4. Uključi film locations router
     try:
         from .api.v1 import film_locations as film_locations_router
         app.include_router(film_locations_router.router, prefix="/api/v1")
@@ -370,6 +332,10 @@ async def lifespan(app: FastAPI):
     except ImportError as e:
         logger.warning(f"✗ Analytics router not available: {e}")
 
+    logger.info("=" * 60)
+    logger.info("Application startup complete!")
+    logger.info("=" * 60)
+
     yield  # Aplikacija radi ovde
 
     # Shutdown
@@ -381,17 +347,22 @@ async def lifespan(app: FastAPI):
         logger.error(f"✗ Error closing MongoDB connection: {e}")
 
 
-# Kreiraj aplikaciju sa lifespan handlerom
+# ----------------------------------------------------------------------
+## FASTAPI APP KREACIJA
+# ----------------------------------------------------------------------
+# SAMO JEDNA APP KREACIJA
 app = FastAPI(
     title="Distributed Film Platform API",
     description="REST API for film data aggregation and analysis",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    lifespan=lifespan  # DODAJ OVO
+    lifespan=lifespan
 )
 
-# Ponovi CORS middleware jer smo kreirali novu app
+# ----------------------------------------------------------------------
+## CORS MIDDLEWARE
+# ----------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -407,6 +378,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ----------------------------------------------------------------------
+## UKLJUČIVANJE ROUTERA - OVO JE KLJUČNO!
+# ----------------------------------------------------------------------
+app.include_router(etl_status.router)
+app.include_router(auth_router)
 
 # ----------------------------------------------------------------------
 ## STATUS RUTE
@@ -479,7 +455,9 @@ def api_status():
     }
 
 
-# Debug endpoint za provjeru ruta
+# ----------------------------------------------------------------------
+## DEBUG I TEST RUTE
+# ----------------------------------------------------------------------
 @app.get("/debug/routes", tags=["Debug"])
 async def debug_routes():
     """Vraća sve registrovane rute."""
@@ -498,7 +476,6 @@ async def debug_routes():
     }
 
 
-# Test endpoint za provjeru auth
 @app.post("/api/v1/auth/test", tags=["Debug"])
 async def test_auth_endpoint():
     """Test endpoint za provjeru da li auth rute rade."""
@@ -515,7 +492,6 @@ async def test_auth_endpoint():
     }
 
 
-# Simple test endpoint
 @app.get("/test", tags=["Test"])
 async def test_endpoint():
     """Simple test endpoint."""
@@ -526,14 +502,15 @@ async def test_endpoint():
     }
 
 
+# ----------------------------------------------------------------------
+## ADMIN RUTE
+# ----------------------------------------------------------------------
 @app.get("/admin/users", tags=["Admin"])
 async def admin_get_users(
-        current_user: User = Depends(require_admin),  # Zahtijeva admin role
+        current_user: User = Depends(require_admin),
         db: AsyncSession = Depends(get_db)
 ):
     """Get all users (admin only)"""
-    from sqlalchemy import select
-
     stmt = select(User).order_by(User.created_at.desc())
     result = await db.execute(stmt)
     users = result.scalars().all()
@@ -554,17 +531,3 @@ async def admin_get_users(
             for user in users
         ]
     }
-
-
-
-@app.get("/")
-async def root():
-    return {"message": "Film Location ETL Platform API"}
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
-
-@app.get("/test")
-async def test():
-    return {"message": "API is working"}
