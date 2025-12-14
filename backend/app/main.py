@@ -318,6 +318,7 @@ async def lifespan(app: FastAPI):
         logger.warning(f"✗ ETL router not available: {e}")
 
     # 4. Uključi film locations router
+    # 4. Uključi film locations router
     try:
         from .api.v1 import film_locations as film_locations_router
         app.include_router(film_locations_router.router, prefix="/api/v1")
@@ -325,6 +326,7 @@ async def lifespan(app: FastAPI):
         logger.info("✓ Available analytics endpoints:")
         logger.info("  - GET /api/v1/films/locations")
         logger.info("  - GET /api/v1/films/trending")
+        logger.info("  - GET /api/v1/films/popular")  # DODAJ OVU LINIJU
         logger.info("  - GET /api/v1/cities/popular")
         logger.info("  - GET /api/v1/analytics/films-by-country")
         logger.info("  - GET /api/v1/analytics/cities-near-films")

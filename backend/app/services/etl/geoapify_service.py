@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 class GeoapifyService:
     """Service za rad sa Geoapify Places API"""
+
     def __init__(self):
         self.api_key = settings.GEOAPIFY_API_KEY
         self.base_url = settings.GEOAPIFY_BASE_URL.rstrip('/')
@@ -236,6 +237,195 @@ class GeoapifyService:
         except Exception as e:
             logger.error(f"❌ Geoapify connection error: {e}")
             return False
+
+    async def get_featured_cities(self, limit: int = 4) -> List[Dict[str, Any]]:
+        """
+        Dohvata izabrane gradove za filmsku produkciju
+        """
+        try:
+            logger.info(f"🔍 Getting {limit} featured cities from Geoapify")
+
+            # Lista poznatih filmskih gradova
+            featured_cities = [
+                {"name": "Los Angeles", "country_code": "US"},
+                {"name": "London", "country_code": "GB"},
+                {"name": "Paris", "country_code": "FR"},
+                {"name": "Tokyo", "country_code": "JP"},
+                {"name": "Vancouver", "country_code": "CA"},
+                {"name": "Sydney", "country_code": "AU"},
+                {"name": "Berlin", "country_code": "DE"},
+                {"name": "Rome", "country_code": "IT"}
+            ]
+
+            cities_data = []
+
+            for city_info in featured_cities[:limit]:
+                try:
+                    city_name = city_info["name"]
+                    country_code = city_info["country_code"]
+
+                    logger.info(f"  • Fetching {city_name}, {country_code}")
+
+                    # Dohvati grad iz Geoapify API-ja
+                    url = f"{self.base_url}/geocode/search"
+                    params = {
+                        "text": f"{city_name}, {country_code}",
+                        "type": "city",
+                        "limit": 1,
+                        "apiKey": self.api_key,
+                        "format": "json"
+                    }
+
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        response = await client.get(url, params=params)
+
+                        if response.status_code == 200:
+                            data = response.json()
+                            features = data.get("features", [])
+
+                            if features:
+                                feature = features[0]
+                                props = feature.get("properties", {})
+                                geometry = feature.get("geometry", {})
+                                coordinates = geometry.get("coordinates", [])
+
+                                # Kreiraj grad objekat
+                                city_data = {
+                                    "city_id": f"geoapify_{props.get('place_id', city_name.lower().replace(' ', '_'))}",
+                                    "name": props.get("name", city_name),
+                                    "country": props.get("country", country_code),
+                                    "country_code": country_code,
+                                    "latitude": coordinates[1] if len(coordinates) > 1 else 0,
+                                    "longitude": coordinates[0] if coordinates else 0,
+                                    "population": props.get("population", 0),
+                                    "film_importance": self._get_film_importance(city_name),
+                                    "description": self._get_city_description(city_name),
+                                    "sample_films": self._get_sample_films(city_name),
+                                    "source": "geoapify_api",
+                                    "fetched_at": datetime.utcnow().isoformat()
+                                }
+                                cities_data.append(city_data)
+                                logger.info(f"    ✓ Successfully fetched {city_name}")
+                            else:
+                                logger.warning(f"    ✗ No data for {city_name}, using fallback")
+                                cities_data.append(self._create_fallback_city(city_name, country_code))
+                        else:
+                            logger.warning(f"    ✗ API error for {city_name}: {response.status_code}")
+                            cities_data.append(self._create_fallback_city(city_name, country_code))
+
+                    # Rate limiting
+                    import asyncio
+                    await asyncio.sleep(0.3)
+
+                except Exception as city_error:
+                    logger.error(f"    ✗ Error for {city_info['name']}: {city_error}")
+                    cities_data.append(self._create_fallback_city(city_info["name"], city_info["country_code"]))
+
+            logger.info(f"✅ Successfully fetched {len(cities_data)} featured cities")
+            return cities_data
+
+        except Exception as e:
+            logger.error(f"❌ Error in get_featured_cities: {e}")
+            # Vrati barem fallback gradove
+            return self._get_fallback_cities()[:limit]
+
+    def _get_film_importance(self, city_name: str) -> str:
+        """Vraća filmski značaj grada"""
+        importance = {
+            "Los Angeles": "Hollywood - glavni filmski centar svijeta",
+            "London": "Glavni evropski filmski centar",
+            "Paris": "Centar evropske kinematografije",
+            "Tokyo": "Važan azijski filmski centar",
+            "Vancouver": "Hollywood North - popularna lokacija",
+            "Sydney": "Glavni filmski centar Australije",
+            "Berlin": "Važan evropski filmski centar",
+            "Rome": "Historijska lokacija za filmsko snimanje"
+        }
+        return importance.get(city_name, f"Važna filmska lokacija")
+
+    def _get_city_description(self, city_name: str) -> str:
+        """Vraća opis grada"""
+        description = {
+            "Los Angeles": "Dom Hollywooda i najveća filmska industrija na svijetu.",
+            "London": "Bogata filmska historija sa globalnim uticajem.",
+            "Paris": "Grad ljubavi i svjetla, inspirativna filmska lokacija.",
+            "Tokyo": "Dinamičan grad sa jedinstvenom kinematografijom.",
+            "Vancouver": "Popularna lokacija zbog raznovrsnih scenerija.",
+            "Sydney": "Spektakularne luke i plaže za filmsku produkciju.",
+            "Berlin": "Živa nezavisna filmska scena i bogata historija.",
+            "Rome": "Drevni grad sa beskonačnom filmskom inspiracijom."
+        }
+        return description.get(city_name, f"{city_name} je važna filmska lokacija.")
+
+    def _get_sample_films(self, city_name: str) -> List[str]:
+        """Vraća primjere filmova"""
+        films = {
+            "Los Angeles": ["Titanic", "Avatar", "Star Wars", "The Godfather"],
+            "London": ["Harry Potter", "James Bond", "Sherlock Holmes"],
+            "Paris": ["Amélie", "The Da Vinci Code", "Midnight in Paris"],
+            "Tokyo": ["Godzilla", "Lost in Translation", "The Wolverine"],
+            "Vancouver": ["Deadpool", "Twilight", "The X-Files"],
+            "Sydney": ["Mad Max", "The Matrix", "Mission: Impossible 2"],
+            "Berlin": ["Inglourious Basterds", "The Bourne Supremacy", "Bridge of Spies"],
+            "Rome": ["Roman Holiday", "Gladiator", "The Great Beauty"]
+        }
+        return films.get(city_name, ["Various film productions"])
+
+    def _create_fallback_city(self, city_name: str, country_code: str) -> Dict[str, Any]:
+        """Kreira fallback grad"""
+        return {
+            "city_id": f"fallback_{city_name.lower().replace(' ', '_')}",
+            "name": city_name,
+            "country": country_code,
+            "country_code": country_code,
+            "latitude": 0,
+            "longitude": 0,
+            "population": 0,
+            "film_importance": self._get_film_importance(city_name),
+            "description": self._get_city_description(city_name),
+            "sample_films": self._get_sample_films(city_name),
+            "source": "fallback_data",
+            "raw_data": {}
+        }
+
+    def _get_fallback_cities(self) -> List[Dict[str, Any]]:
+        """Vraća listu fallback gradova"""
+        fallback_configs = [
+            {"name": "Los Angeles", "country_code": "US"},
+            {"name": "London", "country_code": "GB"},
+            {"name": "Paris", "country_code": "FR"},
+            {"name": "Tokyo", "country_code": "JP"},
+            {"name": "Vancouver", "country_code": "CA"},
+            {"name": "Sydney", "country_code": "AU"},
+            {"name": "Berlin", "country_code": "DE"},
+            {"name": "Rome", "country_code": "IT"}
+        ]
+
+        return [self._create_fallback_city(city["name"], city["country_code"]) for city in fallback_configs]
+
+    async def _get_city_population(self, city_name: str, country_code: str) -> int:
+        """Pokušaj dohvatiti populaciju grada"""
+        try:
+            url = f"{self.base_url}/geocode/search"
+            params = {
+                "text": f"{city_name}, {country_code}",
+                "type": "city",
+                "limit": 1,
+                "apiKey": self.api_key,
+                "filter": f"countrycode:{country_code}"
+            }
+
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(url, params=params)
+                if response.status_code == 200:
+                    data = response.json()
+                    features = data.get("features", [])
+                    if features:
+                        props = features[0].get("properties", {})
+                        return props.get("population", 0)
+        except Exception:
+            pass
+        return 0
 
 
 # Singleton instance

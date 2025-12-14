@@ -234,6 +234,39 @@ class TMDBService:
             logger.error(f"✗ TMDB API connection error: {e}")
             return False
 
+async def fetch_popular_movies_by_region(self, region: str = "US", limit: int = 10) -> List[Dict[str, Any]]:
+    """Fetch popular movies by specific region/country"""
+    try:
+        logger.info(f"Fetching popular movies for region: {region}, limit: {limit}")
+
+        url = f"{self.base_url}/movie/popular"
+        params = {
+            "api_key": self.api_key,
+            "language": "en-US",
+            "page": 1,
+            "region": region  # OVO JE KLJUČNO za regionalne filmove
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(url, params=params)
+
+            if response.status_code == 401:
+                logger.error(f"TMDB 401 Unauthorized for region {region}")
+                return []
+
+            response.raise_for_status()
+            data = response.json()
+
+            movies = data.get("results", [])[:limit]
+            logger.info(f"Fetched {len(movies)} popular movies for region {region}")
+            return movies
+
+    except httpx.HTTPStatusError as e:
+        logger.error(f"TMDB API error for region {region}: {e.response.status_code} - {e.response.text}")
+        return []
+    except Exception as e:
+        logger.error(f"Error fetching TMDB data for region {region}: {e}")
+        return []
 
 # Singleton instance
 tmdb_service = TMDBService()
