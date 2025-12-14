@@ -2,7 +2,7 @@ import { Link } from "react-router-dom"; // link za navigaciju izmedju stranica
 import movieIcon from "../images/movie.png";
 
 
-export default function Navbar() {
+export default function MainNavbar() {
   return (
     <nav className="flex justify-between items-center px-10 py-6 shadow-sm bg-white">
       {/* Left: Logo */}

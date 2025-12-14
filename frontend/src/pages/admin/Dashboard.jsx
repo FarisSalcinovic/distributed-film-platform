@@ -2,7 +2,7 @@ import AdminLayout from "./AdminLayout";
 
 export default function AdminDashboard() {
   return (
-    <AdminLayout>
+    <div>
       <h1 className="text-3xl font-bold mb-6">Dashboard Overview</h1>
 
       {/* Example cards */}
@@ -24,6 +24,6 @@ export default function AdminDashboard() {
         </div>
 
       </div>
-    </AdminLayout>
+    </div>
   );
 }

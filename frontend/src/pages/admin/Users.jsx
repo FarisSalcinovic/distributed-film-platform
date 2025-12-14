@@ -4,7 +4,7 @@ import { mockUsers } from "../mock/mockUsers";
 
 export default function Users() {
   return (
-    <AdminLayout>
+    <div>
       <h1 className="text-3xl font-bold mb-6">Manage Users</h1>
 
       <table className="w-full border">
@@ -32,6 +32,6 @@ export default function Users() {
           ))}
         </tbody>
       </table>
-    </AdminLayout>
+    </div>
   );
 }

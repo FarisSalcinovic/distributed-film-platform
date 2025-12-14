@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { AuthProvider } from "./context/AuthContext";
 
+import MainNavbar from "./components/MainNavbar";
 import Navbar from "./components/Navbar";
 import HeroSection from "./components/HeroSection";
 import TrendingCities from "./components/TrendingCities";
@@ -27,14 +29,15 @@ import ProtectedRoute from "./pages/ProtectedRoute";
 
 export default function App() {
   return (
+    // <authProvider>
     <Router>
       <div className="min-h-screen bg-sky-50">
-        <Navbar />
+        {/* <Navbar /> */}
 
         <Routes>
           
-        <Route path="/login" element={<Login />} />
-        <Route path="/signup" element={<Signup />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
 
           {/* Home Page but protected */}
           <Route
@@ -42,6 +45,7 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <>
+                  <MainNavbar />
                   <HeroSection />
                   <TrendingCities />
                   <PopularGenres />
@@ -57,6 +61,7 @@ export default function App() {
             path="/profile"
             element={
               <ProtectedRoute>
+                <MainNavbar />
                 <Profile />
               </ProtectedRoute>
             }
@@ -66,6 +71,7 @@ export default function App() {
             path="/edit-profile"
             element={
               <ProtectedRoute>
+                <MainNavbar />
                 <EditProfile />
               </ProtectedRoute>
             }
@@ -75,6 +81,7 @@ export default function App() {
             path="/city/:cityName"
             element={
               <ProtectedRoute>
+                <MainNavbar />
                 <CityPage />
               </ProtectedRoute>
             }
@@ -84,24 +91,35 @@ export default function App() {
             path="/analytics"
             element={
               <ProtectedRoute>
+                <MainNavbar />
                 <AnalyticsDashboard />
               </ProtectedRoute>
             }
           />
 
 
-          {/* admin routes */}
-          <Route path="/admin/dashboard" element={<AdminDashboard />} />
-          <Route path="/admin/users" element={<Users />} />
-          <Route path="/admin/user/:id" element={<UserDetails />} />
-          <Route path="/admin/etl" element={<ETL />} />
-          <Route path="/admin/stats" element={<Stats />} />
-          <Route path="/admin/data" element={<DataView />} />
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute>
+                <MainNavbar />
+                <AdminLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="dashboard" element={<AdminDashboard />} />
+            <Route path="users" element={<Users />} />
+            <Route path="user/:id" element={<UserDetails />} />
+            <Route path="etl" element={<ETL />} />
+            <Route path="stats" element={<Stats />} />
+            <Route path="data" element={<DataView />} />
+          </Route>
 
         </Routes>
 
         <Footer />
        </div>
       </Router>
+    //</AuthProvider>
   );
 }

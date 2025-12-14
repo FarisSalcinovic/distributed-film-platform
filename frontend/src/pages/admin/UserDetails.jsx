@@ -7,7 +7,7 @@ export default function UserDetails() {
   const user = mockUsers.find(u => u.id == id);
 
   return (
-    <AdminLayout>
+    <div>
       <h1 className="text-3xl font-bold mb-6">Edit User</h1>
 
       <div className="bg-white p-6 rounded-xl shadow max-w-md">
@@ -26,6 +26,6 @@ export default function UserDetails() {
         <button className="bg-blue-600 text-white px-4 py-2 rounded mr-3">Save</button>
         <Link to="/admin/users" className="text-blue-600">Back</Link>
       </div>
-    </AdminLayout>
+    </div>
   );
 }

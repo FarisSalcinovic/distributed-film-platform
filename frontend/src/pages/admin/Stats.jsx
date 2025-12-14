@@ -2,7 +2,7 @@ import AdminLayout from "./AdminLayout";
 
 export default function Stats() {
   return (
-    <AdminLayout>
+    <div>
       <h1 className="text-3xl font-bold mb-6">Platform Statistics</h1>
 
       <div className="bg-white p-6 rounded-xl shadow">
@@ -10,6 +10,6 @@ export default function Stats() {
           Charts will appear here once data is available.
         </p>
       </div>
-    </AdminLayout>
+    </div>
   );
 }

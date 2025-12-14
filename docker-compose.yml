@@ -22,8 +22,8 @@ services:
         condition: service_healthy
       postgresdb:
         condition: service_healthy
-      redis:
-        condition: service_started
+#      redis:
+#        condition: service_started
     restart: unless-stopped
     networks:
       - dcp_network
@@ -84,111 +84,111 @@ services:
       - dcp_network
 
   # 4. Redis Service
-  redis:
-    image: redis:7-alpine
-    container_name: dcp_redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispass}
-    healthcheck:
-      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: always
-    networks:
-      - dcp_network
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: dcp_redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispass}
+  #   healthcheck:
+  #     test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   restart: always
+  #   networks:
+  #     - dcp_network
 
-  # 5. Celery Worker Service
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: dcp_celery_worker
-    command: >
-      sh -c "sleep 10 &&
-             echo 'Starting Celery worker...' &&
-             celery -A app.tasks.celery_app worker -l info -Q default,celery -c 2"
-    volumes:
-      - ./backend:/app
-    environment:
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DEBUG=${DEBUG:-false}
-      - PYTHONPATH=/app
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - backend
-      - mongodb
-      - postgresdb
-    restart: unless-stopped
-    networks:
-      - dcp_network
-    healthcheck:
-      test: [ "CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping" ]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 90s
+  # # 5. Celery Worker Service
+  # worker:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dcp_celery_worker
+  #   command: >
+  #     sh -c "sleep 10 &&
+  #            echo 'Starting Celery worker...' &&
+  #            celery -A app.tasks.celery_app worker -l info -Q default,celery -c 2"
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - DEBUG=${DEBUG:-false}
+  #     - PYTHONPATH=/app
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #     - backend
+  #     - mongodb
+  #     - postgresdb
+  #   restart: unless-stopped
+  #   networks:
+  #     - dcp_network
+  #   healthcheck:
+  #     test: [ "CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping" ]
+  #     interval: 60s
+  #     timeout: 30s
+  #     retries: 3
+  #     start_period: 90s
 
-  # 6. Celery Beat Service (Periodic Tasks)
-  celery-beat:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: dcp_celery_beat
-    command: >
-      sh -c "sleep 20 &&
-             echo 'Starting Celery Beat...' &&
-             celery -A app.tasks.celery_app beat -l info"
-    volumes:
-      - ./backend:/app
-    environment:
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - DEBUG=${DEBUG:-false}
-      - PYTHONPATH=/app
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - worker
-      - mongodb
-    restart: unless-stopped
-    networks:
-      - dcp_network
+  # # 6. Celery Beat Service (Periodic Tasks)
+  # celery-beat:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dcp_celery_beat
+  #   command: >
+  #     sh -c "sleep 20 &&
+  #            echo 'Starting Celery Beat...' &&
+  #            celery -A app.tasks.celery_app beat -l info"
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - DEBUG=${DEBUG:-false}
+  #     - PYTHONPATH=/app
+  #     - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #     - worker
+  #     - mongodb
+  #   restart: unless-stopped
+  #   networks:
+  #     - dcp_network
 
   # 7. Flower (Celery Monitoring)
-  flower:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: dcp_flower
-    command: >
-      sh -c "sleep 25 &&
-             echo 'Starting Flower...' &&
-             celery -A app.tasks.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}"
-    ports:
-      - "5555:5555"
-    volumes:
-      - ./backend:/app
-    environment:
-      - ENVIRONMENT=${ENVIRONMENT:-development}
-      - PYTHONPATH=/app
-      - FLOWER_USER=${FLOWER_USER:-admin}
-      - FLOWER_PASSWORD=${FLOWER_PASSWORD:-admin}
-    env_file:
-      - .env
-    depends_on:
-      - redis
-      - worker
-      - celery-beat
-    restart: unless-stopped
-    networks:
-      - dcp_network
+  # flower:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dcp_flower
+  #   command: >
+  #     sh -c "sleep 25 &&
+  #            echo 'Starting Flower...' &&
+  #            celery -A app.tasks.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}"
+  #   ports:
+  #     - "5555:5555"
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - PYTHONPATH=/app
+  #     - FLOWER_USER=${FLOWER_USER:-admin}
+  #     - FLOWER_PASSWORD=${FLOWER_PASSWORD:-admin}
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #     - worker
+  #     - celery-beat
+  #   restart: unless-stopped
+  #   networks:
+  #     - dcp_network
 
   # 8. Nginx Reverse Proxy (Optional)
   nginx:
