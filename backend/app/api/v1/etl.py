@@ -13,8 +13,8 @@ try:
         run_combined_etl,
         test_api_connections,
         cleanup_old_data,
-        generate_daily_report
-    )
+        generate_daily_report, run_tmdb_etl_task
+)
 
     CELERY_AVAILABLE = True
 except ImportError:
@@ -36,6 +36,17 @@ async def mock_etl_task(task_name: str, **kwargs):
         "task_id": f"mock-{datetime.utcnow().timestamp()}",
         "parameters": kwargs
     }
+
+@router.post("/run-tmdb-etl", tags=["ETL"])
+async def run_tmdb_etl():
+    """
+    Pokreće TMDB ETL task ručno
+    """
+    try:
+        result = await run_tmdb_etl_task()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/run-tmdb-etl")

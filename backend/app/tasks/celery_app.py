@@ -1,5 +1,8 @@
 # backend/app/tasks/celery_app.py
 from celery import Celery
+from sqlalchemy.util.concurrency import asyncio
+
+from .etl_tasks import run_tmdb_etl_task
 from ..config import settings
 
 # Koristi environment varijable iz settings
@@ -39,3 +42,16 @@ celery_app.conf.beat_schedule = {
         "schedule": 604800.0,  # Every 7 days
     },
 }
+
+
+@celery_app.task
+def scheduled_tmdb_etl():
+    """Scheduled task za TMDB ETL (pokreće se svaki dan u 2 AM)"""
+    try:
+        # Pokreni asyncio task
+        loop = asyncio.get_event_loop()
+        result = loop.run_until_complete(run_tmdb_etl_task())
+        return result
+    except Exception as e:
+        print(f"Scheduled task failed: {e}")
+        return {"status": "failed", "error": str(e)}

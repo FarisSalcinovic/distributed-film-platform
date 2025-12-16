@@ -222,6 +222,59 @@ def fetch_and_store_films(self, pages: int = 3, movies_per_page: int = 20):
         }
 
 
+async def run_tmdb_etl_task():
+    """
+    ETL task za TMDB: povlači filmove i snima u MongoDB
+    """
+    try:
+        print("🚀 Starting TMDB ETL task...")
+
+        # 1. Povuci trending filmove
+        trending_movies = await tmdb_service.fetch_trending_movies(limit=50)
+        print(f"📥 Fetched {len(trending_movies)} trending movies")
+
+        # 2. Snimi u MongoDB
+        if trending_movies:
+            result = await tmdb_service.save_films_to_mongodb(trending_movies)
+            print(f"💾 Saved to MongoDB: {result}")
+
+        # 3. Povuci filmove za određene regione
+        regions = ["US", "GB", "FR", "DE", "JP", "IT", "ES", "CA", "AU", "BR"]
+
+        for region in regions:
+            try:
+                print(f"🌍 Fetching regional movies for {region}...")
+                regional_movies = await tmdb_service.fetch_popular_movies_by_region(region, limit=10)
+
+                if regional_movies:
+                    # Snimi regionalne filmove
+                    await tmdb_service.save_regional_films_to_mongodb(region, regional_movies)
+                    print(f"✅ Saved {len(regional_movies)} movies for {region}")
+
+                await asyncio.sleep(1)  # Rate limiting
+
+            except Exception as e:
+                print(f"❌ Error processing region {region}: {e}")
+                continue
+
+        print("🎉 TMDB ETL task completed successfully!")
+        return {
+            "status": "completed",
+            "timestamp": datetime.utcnow().isoformat(),
+            "trending_movies": len(trending_movies),
+            "regions_processed": len(regions)
+        }
+
+    except Exception as e:
+        print(f"❌ TMDB ETL task failed: {e}")
+        return {
+            "status": "failed",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+
+
 @shared_task(bind=True, max_retries=2)
 def fetch_and_store_places(self, country_codes: List[str] = None, limit_per_country: int = 20):
     """Task koji dohvata mesta (places) sa Geoapify i skladišti ih"""
@@ -767,6 +820,7 @@ def generate_daily_report():
                 "total": total_stats
             }
         }
+
 
     except Exception as e:
         logger.error(f"Error generating daily report: {e}")

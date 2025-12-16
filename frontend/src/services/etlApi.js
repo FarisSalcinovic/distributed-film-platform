@@ -1,5 +1,5 @@
 // frontend/src/services/etlApi.js
-import { api } from './api'; // VAŽNO: Import named export 'api'
+import { api } from './api';
 
 // ETL API Services
 export const etlAPI = {
@@ -16,7 +16,7 @@ export const etlAPI = {
         last_jobs: []
       };
     }
-  },
+  }
 };
 
 // Analytics API Services
@@ -57,7 +57,6 @@ export const analyticsAPI = {
         console.error('Nema odgovora od servera');
       }
 
-      // Vrati prazan niz za slučaj greške
       return { films: [], region };
     }
   },
@@ -72,7 +71,27 @@ export const analyticsAPI = {
     }
   },
 
-  // ... (ostali analytics endpointi ostaju isti)
+  // DODAJ OVU FUNKCIJU UNUTAR analyticsAPI OBJEKTA
+  getFilmStats: async () => {
+    try {
+      const response = await api.get('/api/v1/films/stats');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching film stats:', error);
+      // Vrati mock podatke
+      return {
+        ratings: [12, 19, 8, 15, 22, 33, 45, 67, 54, 32],
+        genres: [
+          { name: 'Action', count: 65 },
+          { name: 'Drama', count: 59 }
+        ],
+        yearly: [
+          { year: 2020, count: 59 },
+          { year: 2021, count: 80 }
+        ]
+      };
+    }
+  }
 };
 
 // Test funkcija za endpointove

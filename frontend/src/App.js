@@ -1,3 +1,4 @@
+// frontend/src/App.js
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 
@@ -9,6 +10,7 @@ import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
 import CityPage from "./pages/CityPage";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard";
+import ChartsPage from "./pages/ChartsPage"; // VAŽNO: Dodaj ovaj import
 
 // admin
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -45,6 +47,20 @@ export default function App() {
                     <div className="container mx-auto px-4 py-8">
                       <RegionalPopularityMap />
                     </div>
+                    <Footer />
+                  </>
+                </ProtectedRoute>
+              }
+            />
+
+            {/* CHARTS PAGE */}
+            <Route
+              path="/charts"
+              element={
+                <ProtectedRoute>
+                  <>
+                    <MainNavbar />
+                    <ChartsPage />
                     <Footer />
                   </>
                 </ProtectedRoute>

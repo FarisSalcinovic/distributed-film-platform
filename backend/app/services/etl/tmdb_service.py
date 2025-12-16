@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from datetime import datetime
 import logging
 
+from celery.backends import mongodb
 from sqlalchemy.util.concurrency import asyncio
 
 from ...config import settings
@@ -103,6 +104,100 @@ class TMDBService:
         except Exception as e:
             logger.error(f"Error fetching TMDB data: {e}")
             return []
+
+    async def save_films_to_mongodb(self, films_data: List[Dict[str, Any]]):
+        """
+        Snima filmove u MongoDB
+        """
+        try:
+            if not mongodb.db:
+                await mongodb.connect()
+
+            films_collection = mongodb.db["films"]
+            saved_count = 0
+            updated_count = 0
+
+            for film_data in films_data:
+                # Transformuj podatke u naš format
+                film = await self.transform_movie_data(film_data)
+
+                # Dodaj timestamp
+                film["fetched_at"] = datetime.utcnow()
+                film["data_source"] = "tmdb_api"
+
+                # Provjeri da li film već postoji
+                existing = await films_collection.find_one({"film_id": film["film_id"]})
+
+                if existing:
+                    # Update postojećeg filma
+                    await films_collection.update_one(
+                        {"film_id": film["film_id"]},
+                        {"$set": {**film, "updated_at": datetime.utcnow()}}
+                    )
+                    updated_count += 1
+                else:
+                    # Insert novi film
+                    await films_collection.insert_one(film)
+                    saved_count += 1
+
+            logger.info(f"✅ Saved {saved_count} new films, updated {updated_count} existing films")
+            return {"saved": saved_count, "updated": updated_count, "total": len(films_data)}
+
+        except Exception as e:
+            logger.error(f"❌ Error saving films to MongoDB: {e}")
+            raise
+
+    async def save_regional_films_to_mongodb(self, region: str, films_data: List[Dict[str, Any]]):
+        """
+        Snima regionalne filmove sa dodatnim metadata
+        """
+        try:
+            if not mongodb.db:
+                await mongodb.connect()
+
+            regional_collection = mongodb.db["regional_films"]
+
+            # Kreiraj regionalni dokument
+            regional_doc = {
+                "region": region.upper(),
+                "fetch_date": datetime.utcnow(),
+                "total_films": len(films_data),
+                "films": [],
+                "stats": {
+                    "avg_vote": sum(f.get("vote_average", 0) for f in films_data) / len(
+                        films_data) if films_data else 0,
+                    "avg_popularity": sum(f.get("popularity", 0) for f in films_data) / len(
+                        films_data) if films_data else 0,
+                    "latest_release": max(
+                        [f.get("release_date", "1900-01-01") for f in films_data]) if films_data else None
+                }
+            }
+
+            # Dodaj filmove
+            for film in films_data[:10]:  # Snimi samo top 10
+                film_doc = {
+                    "film_id": film.get("id"),
+                    "title": film.get("title"),
+                    "vote_average": film.get("vote_average"),
+                    "popularity": film.get("popularity"),
+                    "poster_path": film.get("poster_path"),
+                    "release_date": film.get("release_date")
+                }
+                regional_doc["films"].append(film_doc)
+
+            # Snimi u MongoDB
+            await regional_collection.update_one(
+                {"region": region.upper()},
+                {"$set": regional_doc},
+                upsert=True
+            )
+
+            logger.info(f"✅ Saved regional films for {region} to MongoDB")
+            return regional_doc
+
+        except Exception as e:
+            logger.error(f"❌ Error saving regional films: {e}")
+            raise
 
     async def fetch_movie_details(self, movie_id: int) -> Dict[str, Any]:
         """Fetch detailed movie information including credits"""
