@@ -17,7 +17,6 @@ export const etlAPI = {
       };
     }
   },
-  // ... (ostali ETL endpointi ostaju isti)
 };
 
 // Analytics API Services
