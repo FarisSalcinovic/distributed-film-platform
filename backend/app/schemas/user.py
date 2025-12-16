@@ -32,6 +32,7 @@ class UserLogin(BaseModel):
 class UserResponse(UserBase):
     id: uuid.UUID
     role: str
+    is_active: bool
     created_at: datetime
     collections_count: int = 0
     total_data_points: int = 0
@@ -40,14 +41,3 @@ class UserResponse(UserBase):
         from_attributes = True
 
 
-class Token(BaseModel):
-    access_token: str
-    refresh_token: str
-    token_type: str = "bearer"
-    expires_in: int = 3600
-
-
-class TokenData(BaseModel):
-    username: Optional[str] = None
-    user_id: Optional[uuid.UUID] = None
-    role: Optional[str] = None

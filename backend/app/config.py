@@ -1,4 +1,4 @@
-# backend/app/config.py
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
 from urllib.parse import quote_plus
@@ -11,45 +11,51 @@ class Settings(BaseSettings):
     # -------------------------------
     # JWT & SECURITY SETTINGS
     # -------------------------------
-    SECRET_KEY: str
-    REFRESH_SECRET_KEY: str  # NEW: Added for refresh tokens
+    SECRET_KEY: str = "development-secret-key-change-in-production"
+    REFRESH_SECRET_KEY: str = "development-refresh-key-change-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # Changed from 30 to 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # -------------------------------
     # DATABASE SETTINGS
     # -------------------------------
     # PostgreSQL
-    POSTGRES_USER: str
-    POSTGRES_PASSWORD: str
-    POSTGRES_DB: str
-    POSTGRES_HOST: str
-    POSTGRES_PORT: int
+    POSTGRES_USER: str = "user_admin"
+    POSTGRES_PASSWORD: str = "user_admin_password"
+    POSTGRES_DB: str = "user_admin"
+    POSTGRES_HOST: str = "postgresdb"
+    POSTGRES_PORT: int = 5432
 
     # MongoDB
-    MONGO_DB: str
-    MONGO_HOST: str
-    MONGO_PORT: int
-    MONGO_INITDB_ROOT_USERNAME: str  # Changed from Optional to required
-    MONGO_INITDB_ROOT_PASSWORD: str  # Changed from Optional to required
+    MONGO_DB: str = "film_data"
+    MONGO_HOST: str = "mongodb"
+    MONGO_PORT: int = 27017
+    MONGO_INITDB_ROOT_USERNAME: str = "mongo_admin"
+    MONGO_INITDB_ROOT_PASSWORD: str = "mongo_admin_password"
 
     # Redis/Celery
-    REDIS_HOST: str
-    REDIS_PORT: int
-    CELERY_BROKER_URL: str
+    REDIS_HOST: str = "redis"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str = "redis_password"
+    CELERY_BROKER_URL: Optional[str] = None
+    CELERY_RESULT_BACKEND: Optional[str] = None
 
     # -------------------------------
     # EXTERNAL API KEYS
     # -------------------------------
-    TMDB_API_KEY: str
-    OMDB_API_KEY: str
+    TMDB_API_KEY: str = "ff876caeb92a702d0e364f802726ad30"
+    TMDB_BASE_URL: str = "https://api.themoviedb.org/3"
+    TMDB_ACCESS_TOKEN: str = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJmZjg3NmNhZWI5MmE3MDJkMGUzNjRmODAyNzI2YWQzMCIsIm5iZiI6MTc2NDYyNjQ5Ny45ODIsInN1YiI6IjY5MmUxMDQxNmY4YTZiMDgyZWRjMzM5MSIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.DkZ59coDgSCIH0QMq1UMfEAlkfdHYOVnaIVe6gMHlGc"
+
+    GEOAPIFY_API_KEY: str = "7744923d8fc4473ebda8031d3d2f69b7"
+    GEOAPIFY_BASE_URL: str = "https://api.geoapify.com/v1"
 
     # -------------------------------
     # APPLICATION SETTINGS
     # -------------------------------
-    DEBUG: bool = False
-    ENVIRONMENT: str = "development"  # "development" | "production"
+    DEBUG: bool = True
+    ENVIRONMENT: str = "development"
 
     # -------------------------------
     # COMPUTED PROPERTIES
@@ -57,13 +63,13 @@ class Settings(BaseSettings):
 
     @property
     def POSTGRES_URL(self) -> str:
-        """Kreira kompletan PostgreSQL URL"""
+        """Kreira kompletan PostgreSQL URL za async"""
         password = quote_plus(self.POSTGRES_PASSWORD)
         return f"postgresql+asyncpg://{self.POSTGRES_USER}:{password}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
     @property
     def POSTGRES_URL_SYNC(self) -> str:
-        """Kreira kompletan PostgreSQL URL za sync operacije (potrebno za auth)"""
+        """Kreira kompletan PostgreSQL URL za sync operacije"""
         password = quote_plus(self.POSTGRES_PASSWORD)
         return f"postgresql://{self.POSTGRES_USER}:{password}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
@@ -75,23 +81,19 @@ class Settings(BaseSettings):
 
     @property
     def MONGO_URL_NO_AUTH(self) -> str:
-        """Kreira MongoDB URL bez autentifikacije (za inicijalne setup operacije)"""
+        """Kreira MongoDB URL bez autentifikacije"""
         return f"mongodb://{self.MONGO_HOST}:{self.MONGO_PORT}/{self.MONGO_DB}"
 
     @property
     def REDIS_URL(self) -> str:
-        """Kreira kompletan Redis URL"""
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}"
+        """Kreira kompletan Redis URL sa passwordom"""
+        password = quote_plus(self.REDIS_PASSWORD)
+        return f"redis://:{password}@{self.REDIS_HOST}:{self.REDIS_PORT}"
 
     @property
     def TMDB_API_BASE_URL(self) -> str:
         """Base URL za TMDB API"""
-        return "https://api.themoviedb.org/3"
-
-    @property
-    def OMDB_API_BASE_URL(self) -> str:
-        """Base URL za OMDB API"""
-        return "http://www.omdbapi.com"
+        return self.TMDB_BASE_URL
 
     @property
     def FRONTEND_URL(self) -> str:
@@ -99,6 +101,14 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT == "production":
             return "https://yourdomain.com"
         return "http://localhost:3000"
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Postavite CELERY_BROKER_URL i CELERY_RESULT_BACKEND na osnovu REDIS_URL
+        if not self.CELERY_BROKER_URL:
+            self.CELERY_BROKER_URL = f"{self.REDIS_URL}/0"
+        if not self.CELERY_RESULT_BACKEND:
+            self.CELERY_RESULT_BACKEND = f"{self.REDIS_URL}/0"
 
     # -------------------------------
     # VALIDATION
@@ -113,8 +123,10 @@ class Settings(BaseSettings):
         # Provjera API ključeva
         if not self.TMDB_API_KEY or self.TMDB_API_KEY == "your_tmdb_api_key_here":
             raise ValueError("Please set a valid TMDB_API_KEY in .env file")
-        if not self.OMDB_API_KEY or self.OMDB_API_KEY == "your_omdb_api_key_here":
-            raise ValueError("Please set a valid OMDB_API_KEY in .env file")
+
+        # Provjera Geoapify ključa
+        if not self.GEOAPIFY_API_KEY or self.GEOAPIFY_API_KEY == "your_geoapify_api_key_here":
+            print("⚠️  Warning: GEOAPIFY_API_KEY not set. Geoapify ETL will not work.")
 
         return True
 
@@ -124,28 +136,10 @@ try:
     settings = Settings()
     settings.validate_settings()
     print(f"✓ Settings loaded successfully for {settings.ENVIRONMENT} environment")
+    print(f"✓ TMDB API Key: {settings.TMDB_API_KEY[:10]}...")
+    print(f"✓ Geoapify API Key: {settings.GEOAPIFY_API_KEY[:10]}...")
+    print(f"✓ Database URLs configured")
 except Exception as e:
     print(f"✗ Error loading settings: {e}")
-
-
-    # Fallback settings za development
-    class FallbackSettings:
-        ENVIRONMENT = "development"
-        DEBUG = True
-        SECRET_KEY = "development-secret-key-change-in-production"
-        REFRESH_SECRET_KEY = "development-refresh-key-change-in-production"
-        ALGORITHM = "HS256"
-        ACCESS_TOKEN_EXPIRE_MINUTES = 60
-        REFRESH_TOKEN_EXPIRE_DAYS = 7
-
-        @property
-        def POSTGRES_URL_SYNC(self):
-            return "postgresql://user_admin:user_admin_password@postgresdb:5432/user_admin"
-
-        @property
-        def MONGO_URL(self):
-            return "mongodb://mongo_admin:mongo_admin_password@mongodb:27017/film_data?authSource=admin"
-
-
-    settings = FallbackSettings()
-    print("⚠️  Using fallback settings for development")
+    # Bez fallback klase - Pydantic će koristiti default vrijednosti
+    raise

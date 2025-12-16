@@ -1,29 +1,32 @@
+# Core
 fastapi
-uvicorn
-pydantic
-python-jose[cryptography] # Za JWT
-passlib[bcrypt] # Za hashanje lozinki
-python-dotenv # Za učitavanje .env varijabli
-pydantic-settings # Potrebno za BaseSettings u Pydantic v2
-motor # Asinkroni driver za MongoDB
-psycopg2-binary # Driver za PostgreSQL
-celery # Za asinhrone poslove
-requests # Za pozive vanjskih API-ja
-asyncpg # Dodajemo asinkroni driver za PostgreSQL
+uvicorn[standard]
+# Database
 sqlalchemy
-redis
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.6
-email-validator==2.1.0
-pydantic[email]==2.5.0
-# Authentication & Security
-bcrypt==4.1.2
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-# HTTP Client
-httpx==0.26.0
-aiohttp==3.9.3
-
+asyncpg
+psycopg2-binary
+# MongoDB
+motor
+pymongo
+# Authentication
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt
 # Utilities
-python-dotenv==1.0.0
-pytz==2023.3.post1
+python-dotenv
+python-multipart
+email-validator
+pytz
+pydantic-settings
+# HTTP
+requests
+httpx
+aiohttp
+# Task Queue
+celery
+redis
+# Optional but helpful
+python-multipart
+httpx
+flower==2.0.1
+django-celery-beat

@@ -1,18 +1,20 @@
 version: '3.9'
 
 services:
-
   # 1. FastAPI Backend Service
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: dcp_backend
-    command: sh -c "uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
-    volumes:
-      - ./backend:/app
     ports:
       - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DEBUG=${DEBUG:-true}
+      - PYTHONPATH=/app
     env_file:
       - .env
     depends_on:
@@ -20,8 +22,17 @@ services:
         condition: service_healthy
       postgresdb:
         condition: service_healthy
-      redis:
-        condition: service_started
+#      redis:
+#        condition: service_started
+    restart: unless-stopped
+    networks:
+      - dcp_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   # 2. MongoDB Service
   mongodb:
@@ -31,59 +42,202 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     env_file:
       - .env
+    command: mongod --auth
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/admin -u ${MONGO_INITDB_ROOT_USERNAME} -p ${MONGO_INITDB_ROOT_PASSWORD} --quiet || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     restart: always
+    networks:
+      - dcp_network
 
-  # 3. PostgreSQL Service (ISPRAVLJENO)
+  # 3. PostgreSQL Service
   postgresdb:
-    image: postgres:15
+    image: postgres:15-alpine
     container_name: dcp_postgresdb
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-user_admin}
-      POSTGRES_USER: ${POSTGRES_USER:-user_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-user_admin_password}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: md5
     env_file:
       - .env
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user_admin}" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     restart: always
+    networks:
+      - dcp_network
 
   # 4. Redis Service
-  redis:
-    image: redis:latest
-    container_name: dcp_redis
-    ports:
-      - "6379:6379"
-    restart: always
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: dcp_redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-redispass}
+  #   healthcheck:
+  #     test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   restart: always
+  #   networks:
+  #     - dcp_network
 
-  # 5. Celery Worker Service
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: dcp_celery_worker
-    command: celery -A app.tasks.celery_app worker -l info  # PRAVILNA PUTANJA
+  # # 5. Celery Worker Service
+  # worker:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dcp_celery_worker
+  #   command: >
+  #     sh -c "sleep 10 &&
+  #            echo 'Starting Celery worker...' &&
+  #            celery -A app.tasks.celery_app worker -l info -Q default,celery -c 2"
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - DEBUG=${DEBUG:-false}
+  #     - PYTHONPATH=/app
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #     - backend
+  #     - mongodb
+  #     - postgresdb
+  #   restart: unless-stopped
+  #   networks:
+  #     - dcp_network
+  #   healthcheck:
+  #     test: [ "CMD", "celery", "-A", "app.tasks.celery_app", "inspect", "ping" ]
+  #     interval: 60s
+  #     timeout: 30s
+  #     retries: 3
+  #     start_period: 90s
+
+  # # 6. Celery Beat Service (Periodic Tasks)
+  # celery-beat:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dcp_celery_beat
+  #   command: >
+  #     sh -c "sleep 20 &&
+  #            echo 'Starting Celery Beat...' &&
+  #            celery -A app.tasks.celery_app beat -l info"
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - DEBUG=${DEBUG:-false}
+  #     - PYTHONPATH=/app
+  #     - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #     - worker
+  #     - mongodb
+  #   restart: unless-stopped
+  #   networks:
+  #     - dcp_network
+
+  # 7. Flower (Celery Monitoring)
+  # flower:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dcp_flower
+  #   command: >
+  #     sh -c "sleep 25 &&
+  #            echo 'Starting Flower...' &&
+  #            celery -A app.tasks.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}"
+  #   ports:
+  #     - "5555:5555"
+  #   volumes:
+  #     - ./backend:/app
+  #   environment:
+  #     - ENVIRONMENT=${ENVIRONMENT:-development}
+  #     - PYTHONPATH=/app
+  #     - FLOWER_USER=${FLOWER_USER:-admin}
+  #     - FLOWER_PASSWORD=${FLOWER_PASSWORD:-admin}
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     - redis
+  #     - worker
+  #     - celery-beat
+  #   restart: unless-stopped
+  #   networks:
+  #     - dcp_network
+
+  # 8. Nginx Reverse Proxy (Optional)
+  nginx:
+    image: nginx:alpine
+    container_name: dcp_nginx
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
-      - ./backend:/app
-    env_file:
-      - .env
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./ssl:/etc/nginx/ssl
     depends_on:
-      redis:
-        condition: service_started
+      - backend
+    restart: unless-stopped
+    networks:
+      - dcp_network
+
+  # 9. pgAdmin (PostgreSQL Web Interface - Optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: dcp_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgresdb
+    restart: unless-stopped
+    networks:
+      - dcp_network
 
 volumes:
   mongodb_data:
+    driver: local
   postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  dcp_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

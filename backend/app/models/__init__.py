@@ -1,5 +1,4 @@
-# Ovo je važno da bi modeli bili dostupni
+# backend/app/models/__init__.py
 from .user import User
-# Dodajte ostale modele ovdje kada ih kreirate
 
 __all__ = ['User']
