@@ -14,8 +14,11 @@ export default function Login() {
     clearError();
 
     try {
-      await login(username, password);
-      navigate("/profile");
+      const success = await login(username, password);
+      if (success) {
+        navigate("/profile");
+      }
+
     } catch {
       // error already handled by context
     }

@@ -1,30 +1,53 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 
+const API_URL = "http://localhost:8000"; // change to 5050 if needed
+
 export default function Signup() {
   const navigate = useNavigate();
 
+  const [username, setUsername] = useState("");
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   async function handleSignup(e) {
     e.preventDefault();
+    setError("");
 
     try {
-      /*
-      await fetch("http://localhost:8000/auth/register", {
+      const res = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          username,
+          email,
+          password,
+          full_name: fullName
+        })
       });
-      */
 
-      // ✅ MOCK SUCCESS
+      const data = await res.json();
+
+      if (!res.ok) {
+        // Backend validation errors (FastAPI style)
+        if (Array.isArray(data.detail)) {
+          setError(data.detail[0]?.msg || "Validation error");
+        } else {
+          setError(data.detail || "Signup failed");
+        }
+        return;
+      }
+
+      // ✅ SUCCESS
+      // Backend creates user; redirect to login
       navigate("/login");
 
     } catch (err) {
-      setError("Signup failed");
+      setError("Cannot connect to server");
     }
   }
 
@@ -37,6 +60,24 @@ export default function Signup() {
         <h1 className="text-2xl font-bold mb-6 text-center">Sign Up</h1>
 
         {error && <p className="text-red-500 text-sm mb-4">{error}</p>}
+
+        <input
+          type="text"
+          placeholder="Username"
+          className="w-full border p-2 rounded mb-4"
+          value={username}
+          onChange={e => setUsername(e.target.value)}
+          required
+        />
+
+        <input
+          type="text"
+          placeholder="Full name"
+          className="w-full border p-2 rounded mb-4"
+          value={fullName}
+          onChange={e => setFullName(e.target.value)}
+          required
+        />
 
         <input
           type="email"
