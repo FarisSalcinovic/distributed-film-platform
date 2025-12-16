@@ -36,3 +36,29 @@
     transform: rotate(360deg);
   }
 }
+
+/* FIX ZA LEAFLET MAPU */
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  transform: translateZ(0); /* Hardware acceleration */
+}
+
+.leaflet-marker-icon {
+  transform: translateZ(0); /* Prevent reflows */
+}
+
+.custom-marker-icon {
+  transform: translateZ(0);
+  will-change: transform; /* Optimizacija */
+}
+
+/* Spriječi neželjene scroll efekte */
+.leaflet-map-pane,
+.leaflet-tile-pane {
+  transform: translateZ(0);
+}

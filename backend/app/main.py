@@ -317,7 +317,7 @@ async def lifespan(app: FastAPI):
     except ImportError as e:
         logger.warning(f"✗ ETL router not available: {e}")
 
-    # 4. Uključi film locations router
+
     # 4. Uključi film locations router
     try:
         from .api.v1 import film_locations as film_locations_router

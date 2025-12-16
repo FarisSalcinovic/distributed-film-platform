@@ -644,35 +644,24 @@ def _get_fallback_coordinates(country_code: str):
 
 
 @router.get("/map/regional-popularity", tags=["Analytics"])
+@router.get("/map/regional-popularity", tags=["Analytics"])
 async def get_regional_popularity_map():
     """
-    Mapa filmske popularnosti po regionu
-    Vraća podatke za prikaz mape sa najpopularnijim filmovima po zemljama
+    Mapa filmske popularnosti po regionu - POPRAVLJENO
     """
     try:
         logger.info("Generating regional popularity map data")
 
         from ...services.etl.tmdb_service import tmdb_service
-        from ...services.etl.geoapify_service import geoapify_service
 
-        # Lista zemalja za koje želimo prikazati podatke
+        # Lista zemalja - smanjite za testiranje
         countries = [
             {"code": "US", "name": "United States"},
             {"code": "GB", "name": "United Kingdom"},
             {"code": "FR", "name": "France"},
             {"code": "DE", "name": "Germany"},
-            {"code": "JP", "name": "Japan"},
-            {"code": "CA", "name": "Canada"},
-            {"code": "AU", "name": "Australia"},
-            {"code": "IT", "name": "Italy"},
-            {"code": "ES", "name": "Spain"},
-            {"code": "BR", "name": "Brazil"},
-            {"code": "IN", "name": "India"},
-            {"code": "CN", "name": "China"},
-            {"code": "RU", "name": "Russia"},
-            {"code": "KR", "name": "South Korea"},
-            {"code": "MX", "name": "Mexico"}
-        ]
+            {"code": "JP", "name": "Japan"}
+        ]  # Samo 5 zemalja za početak
 
         regional_data = []
 
@@ -683,33 +672,24 @@ async def get_regional_popularity_map():
 
                 logger.info(f"Processing country: {country_name} ({country_code})")
 
-                # 1. Dohvati popularne filmove za ovu regiju
-                # Prvo probaj sa fetch_popular_movies_by_region ako postoji
-                # Ako ne postoji, koristi fetch_trending_movies kao fallback
+                # 1. Dohvati popularne filmove ZA OVU ZEMLJU - POPRAVLJENO
                 movies = []
-                try:
-                    # Pokušaj da pozoveš novu funkciju
+
+                # Provjeri da li metoda postoji
+                if hasattr(tmdb_service, 'fetch_popular_movies_by_region'):
+                    logger.info(f"Using fetch_popular_movies_by_region for {country_code}")
                     movies = await tmdb_service.fetch_popular_movies_by_region(
                         region=country_code,
                         limit=10
                     )
-                except AttributeError:
-                    # Fallback: koristi trending movies ako nova funkcija ne postoji
-                    logger.info(f"Using trending movies as fallback for {country_code}")
-                    all_movies = await tmdb_service.fetch_trending_movies(limit=20)
-                    # Filtriranje po production_countries ili original_language
-                    movies = [
-                        m for m in all_movies
-                        if country_code in str(m.get("original_language", "")).upper()
-                           or any(country_name.lower() in str(c).lower() for c in m.get("production_countries", []))
-                    ][:10]
+                else:
+                    logger.warning(f"Method fetch_popular_movies_by_region not found, using trending")
+                    movies = await tmdb_service.fetch_trending_movies(limit=10)
 
+                # Ako nema filmova za tu zemlju, probaj globalne
                 if not movies or len(movies) < 3:
-                    logger.warning(
-                        f"Insufficient movies for region {country_code} ({len(movies) if movies else 0} found)")
-                    # Koristi globalne trending filmove kao fallback
-                    fallback_movies = await tmdb_service.fetch_trending_movies(limit=10)
-                    movies = fallback_movies[:5] if fallback_movies else []
+                    logger.warning(f"No region-specific movies for {country_code}, using global")
+                    movies = await tmdb_service.fetch_trending_movies(limit=10)
 
                 # 2. Odaberi top 3 filma za prikaz
                 top_movies = []
@@ -721,132 +701,100 @@ async def get_regional_popularity_map():
                         "vote_average": round(movie.get("vote_average", 0), 1),
                         "poster_path": movie.get("poster_path"),
                         "poster_url": f"https://image.tmdb.org/t/p/w500{movie['poster_path']}" if movie.get(
-                            "poster_path") else "https://via.placeholder.com/500x750?text=No+Poster",
-                        "overview": (movie.get("overview", "")[:100] + "...") if len(
-                            movie.get("overview", "")) > 100 else movie.get("overview", "")
+                            "poster_path") else "",
+                        "overview": movie.get("overview", "")[:100] + "..." if movie.get("overview") else "",
+                        "region": movie.get("region", "global")  # Dodaj region info
                     }
                     top_movies.append(movie_data)
 
-                # 3. Analiziraj žanrove za filmove
-                genre_counter = {}
-                for movie in movies[:10]:
-                    genre_ids = movie.get("genre_ids", [])
-                    for genre_id in genre_ids:
-                        genre_counter[genre_id] = genre_counter.get(genre_id, 0) + 1
+                # 3. Analiziraj žanrove
+                top_genres = await _analyze_genres(movies[:10])
 
-                # Ako nema genre_ids, probaj sa genres listom
-                if not genre_counter and movies:
-                    for movie in movies[:10]:
-                        genres = movie.get("genres", [])
-                        if isinstance(genres, list):
-                            for genre in genres:
-                                if isinstance(genre, dict):
-                                    genre_id = genre.get("id")
-                                    if genre_id:
-                                        genre_counter[genre_id] = genre_counter.get(genre_id, 0) + 1
+                # 4. Dohvati geografske podatke
+                latitude, longitude, capital_city = _get_fallback_coordinates(country_code)
 
-                # Sortiraj žanrove po učestalosti
-                sorted_genres = sorted(genre_counter.items(), key=lambda x: x[1], reverse=True)
-
-                # Mapiranje ID-jeva žanrova na nazive
-                genre_map = {
-                    28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
-                    80: "Crime", 99: "Documentary", 18: "Drama", 10751: "Family",
-                    14: "Fantasy", 36: "History", 27: "Horror", 10402: "Music",
-                    9648: "Mystery", 10749: "Romance", 878: "Science Fiction",
-                    10770: "TV Movie", 53: "Thriller", 10752: "War", 37: "Western"
-                }
-
-                top_genres = []
-                for genre_id, count in sorted_genres[:3]:  # Top 3 žanra
-                    genre_name = genre_map.get(genre_id, f"Genre {genre_id}")
-                    percentage = round((count / max(len(movies[:10]), 1)) * 100, 1) if movies else 0
-                    top_genres.append({
-                        "name": genre_name,
-                        "count": count,
-                        "percentage": percentage
-                    })
-
-                # Ako nema žanrova, dodaj generic
-                if not top_genres:
-                    top_genres = [
-                        {"name": "Various", "count": 1, "percentage": 100},
-                        {"name": "Entertainment", "count": 1, "percentage": 100},
-                        {"name": "Movies", "count": 1, "percentage": 100}
-                    ]
-
-                # 4. Dohvati geografske podatke za zemlju
-                try:
-                    # Prvo pokušaj da koristiš postojeći servis
-                    if hasattr(geoapify_service, '_get_major_cities'):
-                        cities = await geoapify_service._get_major_cities(country_code, limit=1)
-                        if cities:
-                            capital_city = cities[0].get("name", "Capital")
-                            # Fallback koordinate za sada
-                            latitude, longitude, _ = _get_fallback_coordinates(country_code)
-                        else:
-                            latitude, longitude, capital_city = _get_fallback_coordinates(country_code)
-                    else:
-                        latitude, longitude, capital_city = _get_fallback_coordinates(country_code)
-                except Exception as geo_error:
-                    logger.warning(f"Geoapify error for {country_code}: {geo_error}")
-                    latitude, longitude, capital_city = _get_fallback_coordinates(country_code)
-
-                # 5. Kreiraj regionalni podatak za mapu
+                # 5. Kreiraj regionalni podatak
                 region_data = {
                     "country_code": country_code,
                     "country_name": country_name,
                     "capital_city": capital_city,
                     "latitude": latitude,
                     "longitude": longitude,
-                    "total_movies_analyzed": min(len(movies), 10),
+                    "total_movies_analyzed": len(movies),
                     "top_movies": top_movies,
                     "top_genres": top_genres,
-                    "source": "tmdb_api",
+                    "source": "tmdb_regional" if movies and movies[0].get("region") == country_code else "tmdb_global",
                     "last_updated": datetime.utcnow().isoformat()
                 }
 
                 regional_data.append(region_data)
-                logger.info(f"✓ Processed {country_name}: {len(top_movies)} movies, {len(top_genres)} genres")
+                logger.info(f"✓ {country_name}: {len(top_movies)} movies from {region_data['source']}")
 
-                # Rate limiting između zahtjeva za API-je
+                # Rate limiting
                 import asyncio
-                await asyncio.sleep(0.3)  # 300ms delay između zemalja
+                await asyncio.sleep(0.2)
 
             except Exception as country_error:
-                logger.error(f"Error processing country {country['name']}: {country_error}")
-                # Dodaj minimalne podatke za ovu zemlju
-                latitude, longitude, capital_city = _get_fallback_coordinates(country["code"])
-                regional_data.append({
-                    "country_code": country["code"],
-                    "country_name": country["name"],
-                    "capital_city": capital_city,
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "total_movies_analyzed": 0,
-                    "top_movies": [],
-                    "top_genres": [{"name": "Data unavailable", "count": 0, "percentage": 0}],
-                    "source": "error",
-                    "last_updated": datetime.utcnow().isoformat()
-                })
+                logger.error(f"Error processing {country['name']}: {country_error}")
                 continue
 
         return {
             "timestamp": datetime.utcnow().isoformat(),
             "total_regions": len(regional_data),
             "regions": regional_data,
-            "map_center": {"lat": 20, "lng": 0},  # Centar mape (Africa)
-            "map_zoom": 2,
-            "status": "success",
-            "message": f"Regional popularity data for {len(regional_data)} countries"
+            "status": "success"
         }
 
     except Exception as e:
-        logger.error(f"Error generating regional popularity map: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to generate regional popularity map: {str(e)}"
-        )
+        logger.error(f"Error generating regional popularity map: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# DODAJTE OVU POMOĆNU FUNKCIJU:
+async def _analyze_genres(movies: List[Dict]) -> List[Dict]:
+    """Analizira žanrove iz liste filmova"""
+    if not movies:
+        return [{"name": "Various", "percentage": 100}]
+
+    genre_counter = {}
+    for movie in movies:
+        genre_ids = movie.get("genre_ids", [])
+        for genre_id in genre_ids:
+            genre_counter[genre_id] = genre_counter.get(genre_id, 0) + 1
+
+    # Ako nema genre_ids, probaj genres
+    if not genre_counter and movies:
+        for movie in movies:
+            genres = movie.get("genres", [])
+            if isinstance(genres, list):
+                for genre in genres:
+                    if isinstance(genre, dict):
+                        genre_id = genre.get("id")
+                        if genre_id:
+                            genre_counter[genre_id] = genre_counter.get(genre_id, 0) + 1
+
+    genre_map = {
+        28: "Action", 12: "Adventure", 16: "Animation", 35: "Comedy",
+        80: "Crime", 18: "Drama", 10751: "Family", 14: "Fantasy",
+        36: "History", 27: "Horror", 10402: "Music", 9648: "Mystery",
+        10749: "Romance", 878: "Sci-Fi", 53: "Thriller", 10752: "War"
+    }
+
+    # Sortiraj i konvertuj u procente
+    sorted_genres = sorted(genre_counter.items(), key=lambda x: x[1], reverse=True)
+    total = sum(genre_counter.values())
+
+    top_genres = []
+    for genre_id, count in sorted_genres[:3]:
+        genre_name = genre_map.get(genre_id, f"Genre {genre_id}")
+        percentage = round((count / total) * 100, 1) if total > 0 else 0
+        top_genres.append({
+            "name": genre_name,
+            "count": count,
+            "percentage": percentage
+        })
+
+    return top_genres if top_genres else [{"name": "Various", "percentage": 100}]
 
 
 @router.get("/map/test-minimal", tags=["Analytics"])
@@ -927,6 +875,44 @@ async def test_minimal_map_data():
             ]
         }
 
+@router.get("/films/popular-region", tags=["Analytics"])
+async def get_popular_films_by_region(
+        region: str = Query("US", description="ISO country code, npr. US, GB, FR"),
+        limit: int = Query(3, ge=1, le=10)
+):
+    """
+    Vraća trenutno 3 najpopularnija filma za određenu državu
+    """
+    try:
+        from ...services.etl.tmdb_service import tmdb_service
+
+        movies = await tmdb_service.fetch_popular_movies_by_region(region, limit=limit)
+
+        # transform u naš standard response
+        popular = []
+        for movie in movies:
+            popular.append({
+                "film_id": movie.get("id"),
+                "title": movie.get("title"),
+                "release_date": movie.get("release_date"),
+                "popularity": movie.get("popularity"),
+                "vote_average": movie.get("vote_average"),
+                "poster_url": (
+                    f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}"
+                    if movie.get("poster_path") else None
+                )
+            })
+
+        return {
+            "region": region.upper(),
+            "limit": limit,
+            "count": len(popular),
+            "films": popular
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/analytics/stats", tags=["Analytics"])
 async def get_analytics_stats():
     """
@@ -987,6 +973,8 @@ async def get_analytics_stats():
                 "etl_jobs": "ETL execution history"
             }
         }
+
+
 
 
 
