@@ -1,21 +1,16 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./context/AuthContext";
 
 import MainNavbar from "./components/MainNavbar";
-import Navbar from "./components/Navbar";
-import HeroSection from "./components/HeroSection";
-import TrendingCities from "./components/TrendingCities";
-import PopularGenres from "./components/PopularGenres";
-import RecentSearches from "./components/RecentSearches";
 import Footer from "./components/Footer";
-import RegionalPopularityMap from "./components/RegionalPopularityMap"; // NOVO: Dodaj ovaj import
+import RegionalPopularityMap from "./components/RegionalPopularityMap";
 
 import Profile from "./pages/Profile";
 import EditProfile from "./pages/EditProfile";
 import CityPage from "./pages/CityPage";
 import AnalyticsDashboard from "./pages/AnalyticsDashboard";
 
-// admin pages
+// admin
 import AdminDashboard from "./pages/admin/Dashboard";
 import Users from "./pages/admin/Users";
 import UserDetails from "./pages/admin/UserDetails";
@@ -33,31 +28,16 @@ export default function App() {
     <AuthProvider>
       <Router>
         <div className="min-h-screen bg-sky-50">
+
           <Routes>
 
+            {/* AUTH */}
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
 
-            {/* Home Page but protected */}
+            {/* NEW HOME — WORLD MAP */}
             <Route
               path="/"
-              element={
-                <ProtectedRoute>
-                  <>
-                    <MainNavbar />
-                    <HeroSection />
-                    <TrendingCities />
-                    <PopularGenres />
-                    <RecentSearches />
-                    <Footer />
-                  </>
-                </ProtectedRoute>
-              }
-            />
-
-            {/* World Film Map - NOVA RUTA */}
-            <Route
-              path="/map/regional-popularity"
               element={
                 <ProtectedRoute>
                   <>
@@ -71,7 +51,13 @@ export default function App() {
               }
             />
 
-            {/* Profile rute */}
+            {/* OPTIONAL: redirect old map route to home */}
+            <Route
+              path="/map/regional-popularity"
+              element={<Navigate to="/" replace />}
+            />
+
+            {/* PROFILE */}
             <Route
               path="/profile"
               element={
@@ -124,7 +110,7 @@ export default function App() {
               }
             />
 
-            {/* Admin rute */}
+            {/* ADMIN */}
             <Route
               path="/admin"
               element={
@@ -146,6 +132,7 @@ export default function App() {
             </Route>
 
           </Routes>
+
         </div>
       </Router>
     </AuthProvider>
