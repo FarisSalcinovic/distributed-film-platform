@@ -1,9 +1,1 @@
-# Environment variables
-.env
-
-# Python
-__pycache__/
-*.pyc
-
-# Docker
-*.log
+/.idea/vcs.xml
